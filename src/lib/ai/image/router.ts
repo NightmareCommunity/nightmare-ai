@@ -7,17 +7,21 @@ import * as pollinations from "@/lib/ai/image/pollinations";
 export async function generateImages(
   req: ImageRequest
 ): Promise<ImageResponse> {
+  // Try NVIDIA first — if it's not configured OR returns ANY error (entitlement,
+  // rate-limit, network, empty response, etc.), fall back to Pollinations.
+  // Pollinations is free + no-auth and always works, so users get images either way.
   try {
-    return await nvidiaImage.generate(req);
-  } catch (err) {
-    if (err instanceof ImageError) {
-      if (err.kind === "model_unavailable" || err.kind === "auth") {
-        return await pollinations.generate(req);
-      }
-      throw err;
+    if (nvidiaImage.isConfigured()) {
+      return await nvidiaImage.generate(req);
     }
-    throw err;
+  } catch (err) {
+    // Log but don't throw — fall through to Pollinations
+    console.warn(
+      "[image-router] NVIDIA image gen failed, falling back to Pollinations:",
+      err instanceof Error ? err.message : String(err)
+    );
   }
+  return await pollinations.generate(req);
 }
 
 export { nvidiaImage, pollinations };
