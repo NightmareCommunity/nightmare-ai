@@ -91,29 +91,90 @@ export async function* stream(req: ChatRequest): AsyncGenerator<StreamChunk> {
     );
   }
   const model = normalizeModel(req.model);
+  const baseURL =
+    process.env.NVIDIA_BASE_URL || "https://integrate.api.nvidia.com/v1";
+  const apiKey = process.env.NVIDIA_API_KEY || "";
+
+  // Use raw fetch + manual SSE parsing — more reliable on Cloudflare Workers
+  // than the OpenAI SDK's stream iterator (which can silently close).
+  let resp: Response;
   try {
-    const stream = await client.chat.completions.create({
-      model,
-      messages: req.messages,
-      stream: true,
-      temperature: creativityToTemperature(req.creativity),
-      max_tokens: req.maxTokens ?? 1024,
+    resp = await fetch(`${baseURL}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "text/event-stream",
+      },
+      body: JSON.stringify({
+        model,
+        messages: req.messages,
+        stream: true,
+        temperature: creativityToTemperature(req.creativity),
+        max_tokens: req.maxTokens ?? 1024,
+        stream_options: { include_usage: true },
+      }),
+      signal: req.signal,
     });
-    let lastUsage: StreamChunk["usage"] | undefined;
-    for await (const chunk of stream) {
-      const delta = chunk.choices?.[0]?.delta?.content;
-      if (typeof delta === "string" && delta.length > 0) {
-        yield { type: "delta", content: delta };
-      }
-      if ((chunk as { usage?: StreamChunk["usage"] }).usage) {
-        lastUsage = (chunk as { usage: StreamChunk["usage"] }).usage;
-      }
-    }
-    if (lastUsage) {
-      yield { type: "usage", usage: lastUsage };
-    }
-    yield { type: "done" };
   } catch (err) {
     throw wrapError(err);
   }
+
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    throw new AIError(
+      classifyHttpError(resp.status),
+      `NVIDIA NIM request failed (${resp.status}): ${text.slice(0, 300)}`,
+      resp.status
+    );
+  }
+
+  if (!resp.body) {
+    throw new AIError("server", "No response body from NVIDIA NIM");
+  }
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let lastUsage: StreamChunk["usage"] | undefined;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx: number;
+      while ((idx = buffer.indexOf("\n\n")) !== -1) {
+        const raw = buffer.slice(0, idx).trim();
+        buffer = buffer.slice(idx + 2);
+        if (!raw.startsWith("data:")) continue;
+        const payload = raw.slice(5).trim();
+        if (payload === "[DONE]") continue;
+        try {
+          const chunk = JSON.parse(payload) as {
+            choices?: Array<{
+              delta?: { content?: string };
+            }>;
+            usage?: StreamChunk["usage"];
+          };
+          const delta = chunk.choices?.[0]?.delta?.content;
+          if (typeof delta === "string" && delta.length > 0) {
+            yield { type: "delta", content: delta };
+          }
+          if (chunk.usage) {
+            lastUsage = chunk.usage;
+          }
+        } catch {
+          // partial JSON, skip
+        }
+      }
+    }
+  } catch (err) {
+    throw wrapError(err);
+  }
+
+  if (lastUsage) {
+    yield { type: "usage", usage: lastUsage };
+  }
+  yield { type: "done" };
 }
