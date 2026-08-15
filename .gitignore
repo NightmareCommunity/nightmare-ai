@@ -52,3 +52,11 @@ tsconfig.tsbuildinfo
 
 # Prisma generated client (regenerated locally)
 node_modules/.prisma/
+
+# Android APK build artifacts
+android-apk/**/.gradle/
+android-apk/**/build/
+android-apk/**/.idea/
+android-apk/**/*.iml
+android-apk/**/local.properties
+*.apk
