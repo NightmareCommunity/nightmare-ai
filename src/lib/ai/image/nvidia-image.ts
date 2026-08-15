@@ -10,12 +10,18 @@ import type {
 import { ImageError } from "@/lib/ai/image/types";
 import { classifyHttpError } from "@/lib/ai/errors";
 
-const client = new OpenAI({
-  baseURL:
-    process.env.NVIDIA_IMAGE_BASE_URL ||
-    "https://integrate.api.nvidia.com/v1",
-  apiKey: process.env.NVIDIA_API_KEY || "",
-});
+// Lazy-init: same reason as nvidia.ts — avoid SDK throwing during build
+let _client: OpenAI | null = null;
+function getClient(): OpenAI {
+  if (_client) return _client;
+  _client = new OpenAI({
+    baseURL:
+      process.env.NVIDIA_IMAGE_BASE_URL ||
+      "https://integrate.api.nvidia.com/v1",
+    apiKey: process.env.NVIDIA_API_KEY || "missing",
+  });
+  return _client;
+}
 
 export function isConfigured(): boolean {
   return !!process.env.NVIDIA_API_KEY;
@@ -75,6 +81,7 @@ export async function generate(req: ImageRequest): Promise<ImageResponse> {
     if (typeof req.seed === "number") params.seed = req.seed;
     if (req.negativePrompt) params.negative_prompt = req.negativePrompt;
 
+    const client = getClient();
     const res = (await client.images.generate(
       params as Parameters<typeof client.images.generate>[0]
     )) as { data?: Array<{ b64_json?: string }> };

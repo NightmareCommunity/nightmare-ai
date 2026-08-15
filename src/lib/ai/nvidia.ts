@@ -8,10 +8,19 @@ import type {
 import { AIError, classifyHttpError } from "@/lib/ai/errors";
 import { DEFAULT_MODEL_ID } from "@/lib/constants";
 
-const client = new OpenAI({
-  baseURL: process.env.NVIDIA_BASE_URL || "https://integrate.api.nvidia.com/v1",
-  apiKey: process.env.NVIDIA_API_KEY || "",
-});
+// Lazy-init: the OpenAI SDK throws at construction time if apiKey is "".
+// During Cloudflare build phase, NVIDIA_API_KEY isn't set (it's a secret),
+// so we defer client creation until the first request.
+let _client: OpenAI | null = null;
+function getClient(): OpenAI {
+  if (_client) return _client;
+  _client = new OpenAI({
+    baseURL:
+      process.env.NVIDIA_BASE_URL || "https://integrate.api.nvidia.com/v1",
+    apiKey: process.env.NVIDIA_API_KEY || "missing",
+  });
+  return _client;
+}
 
 export function isConfigured(): boolean {
   return !!process.env.NVIDIA_API_KEY;
@@ -58,7 +67,7 @@ export async function complete(req: ChatRequest): Promise<ChatResponse> {
   }
   const model = normalizeModel(req.model);
   try {
-    const res = await client.chat.completions.create({
+    const res = await getClient().chat.completions.create({
       model,
       messages: req.messages,
       stream: false,
