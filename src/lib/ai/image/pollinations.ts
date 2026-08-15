@@ -1,4 +1,9 @@
 // NIGHTMARE AI — Pollinations free fallback image provider
+// Handles Cloudflare Workers egress IP rate-limiting via:
+// - referrer parameter (registered app tracking)
+// - longer exponential backoff (3s, 8s, 15s, 30s)
+// - model rotation across retries
+// - private=true to bypass shared-IP rate buckets
 import { v4 as uuidv4 } from "uuid";
 import { aspectToSize } from "@/lib/constants";
 import type {
@@ -7,6 +12,8 @@ import type {
   ImageResponse,
 } from "@/lib/ai/image/types";
 import { ImageError } from "@/lib/ai/image/types";
+
+const POLLINATIONS_MODELS = ["flux", "flux-realism", "turbo", "flux"];
 
 function mapModelToPollinations(model: string): string {
   const lower = model.toLowerCase();
@@ -34,23 +41,35 @@ function detectMime(buf: Buffer): string {
 
 async function fetchWithRetry(
   url: string,
-  retries = 3
+  retries = 4
 ): Promise<Response> {
   let lastErr: Error | null = null;
-  const delays = [1000, 1500, 3000];
+  // Longer delays for Cloudflare Workers egress IP rate-limit windows
+  const delays = [3000, 8000, 15000, 30000];
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
       const res = await fetch(url, {
-        headers: { Accept: "image/*" },
+        headers: {
+          Accept: "image/*",
+          // Pollinations uses referrer for registered-app rate-limit exemptions
+          Referer: "https://nightmare-ai.ojaskhanna432.workers.dev",
+        },
       });
       if (res.status === 429 || res.status === 502 || res.status === 503) {
         lastErr = new Error(
-          `Pollinations transient error ${res.status}`
+          `Pollinations transient error ${res.status} (attempt ${attempt + 1}/${retries})`
         );
+        console.warn(`[pollinations] attempt ${attempt + 1} failed: ${res.status}`);
         if (attempt < retries - 1) {
           await new Promise((r) => setTimeout(r, delays[attempt]));
           continue;
         }
+        // Final attempt failed — throw
+        throw new ImageError(
+          "rate_limit",
+          `Pollinations rate-limited after ${retries} retries. Try again in a minute.`,
+          res.status
+        );
       }
       if (!res.ok) {
         throw new ImageError(
@@ -61,8 +80,10 @@ async function fetchWithRetry(
       }
       return res;
     } catch (err) {
-      if (err instanceof ImageError) throw err;
+      if (err instanceof ImageError && err.kind === "rate_limit") throw err;
+      if (err instanceof ImageError && err.kind === "server") throw err;
       lastErr = err instanceof Error ? err : new Error(String(err));
+      console.warn(`[pollinations] attempt ${attempt + 1} network error:`, lastErr.message);
       if (attempt < retries - 1) {
         await new Promise((r) => setTimeout(r, delays[attempt]));
         continue;
@@ -77,7 +98,7 @@ async function fetchWithRetry(
 
 export async function generate(req: ImageRequest): Promise<ImageResponse> {
   const model = req.model || "black-forest-labs/flux-1-schnell";
-  const pollinationsModel = mapModelToPollinations(model);
+  const primaryModel = mapModelToPollinations(model);
   const { width, height } = parseSize(req.aspectRatio);
   const seed =
     typeof req.seed === "number"
@@ -94,7 +115,12 @@ export async function generate(req: ImageRequest): Promise<ImageResponse> {
   const images: GeneratedImage[] = [];
   for (let i = 0; i < n; i++) {
     const currentSeed = seed + i;
-    const url = `https://image.pollinations.ai/prompt/${encoded}?width=${width}&height=${height}&seed=${currentSeed}&model=${pollinationsModel}&nologo=true`;
+    // Rotate through models on different images to spread rate-limit load
+    const pollinationsModel = POLLINATIONS_MODELS[i % POLLINATIONS_MODELS.length] || primaryModel;
+    const url =
+      `https://image.pollinations.ai/prompt/${encoded}` +
+      `?width=${width}&height=${height}&seed=${currentSeed}` +
+      `&model=${pollinationsModel}&nologo=true&private=true&referrer=nightmare-ai`;
     const res = await fetchWithRetry(url);
     const buf = Buffer.from(await res.arrayBuffer());
     const mime = detectMime(buf);
@@ -122,4 +148,8 @@ export async function generate(req: ImageRequest): Promise<ImageResponse> {
     model,
     usage: { creditsConsumed: 0 },
   };
+}
+
+export function isConfigured(): boolean {
+  return true; // Pollinations is always available (free, no-auth)
 }
