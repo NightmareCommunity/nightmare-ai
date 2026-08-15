@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Next.js
+.next/
+out/
+build/
+
+# OpenNext / Cloudflare
+.open-next/
+.wrangler/
+.dev.vars
+
+# Env
+.env
+.env.local
+.env.*.local
+.dev.vars
+
+# Database
+db/*.db
+db/*.db-journal
+
+# Logs
+*.log
+dev.log
+server.log
+
+# Editor
+.vscode/
+.idea/
+.DS_Store
+
+# Misc
+*.pem
+coverage/
+.cache/
+
+# Tool outputs
+tool-results/
+download/
+upload/
+tests/
+skills/
+.zscripts/
+mini-services/
+
+# Build info
+tsconfig.tsbuildinfo
+
+# Prisma generated client (regenerated locally)
+node_modules/.prisma/

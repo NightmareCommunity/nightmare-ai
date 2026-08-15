@@ -1,0 +1,24 @@
+{
+  "name": "nightmare-ai",
+  "account_id": "9dba4b2bcc1c44e30c76b6d50e9ad8c6",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2025-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "observability": { "enabled": true },
+  "vars": {
+    "NEXT_PUBLIC_APP_NAME": "NIGHTMARE AI",
+    "NEXT_PUBLIC_SUPABASE_URL": "https://ngshuozlyaooqccolwjk.supabase.co",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_sHPombDX3m2mkoG74G42Rw__7rE7xP-",
+    "SUPABASE_URL": "https://ngshuozlyaooqccolwjk.supabase.co",
+    "SUPABASE_ANON_KEY": "sb_publishable_sHPombDX3m2mkoG74G42Rw__7rE7xP-",
+    "NVIDIA_BASE_URL": "https://integrate.api.nvidia.com/v1",
+    "NVIDIA_MODEL": "meta/llama-3.1-8b-instruct",
+    "NVIDIA_IMAGE_BASE_URL": "https://integrate.api.nvidia.com/v1",
+    "NVIDIA_IMAGE_MODEL": "black-forest-labs/flux-1-schnell",
+    "PRESENTON_API_URL": "https://api.presenton.ai"
+  }
+}

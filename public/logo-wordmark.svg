@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 64" width="320" height="64">
+  <defs>
+    <linearGradient id="wf-red" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ff3b5c"/>
+      <stop offset="100%" stop-color="#dc2640"/>
+    </linearGradient>
+    <linearGradient id="wf-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff3b5c"/>
+      <stop offset="55%" stop-color="#dc2640"/>
+      <stop offset="100%" stop-color="#7a0a1f"/>
+    </linearGradient>
+    <linearGradient id="wf-inner" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1a0610"/>
+      <stop offset="100%" stop-color="#08020a"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Logo mark -->
+  <g transform="translate(2,2)">
+    <rect x="0" y="0" width="60" height="60" rx="14" ry="14" fill="url(#wf-bg)"/>
+    <circle cx="30" cy="30" r="22" fill="url(#wf-inner)"/>
+    <path d="M 20 24 Q 20 20 24 20 L 26 20 Q 30 20 30 24 L 30 28 Q 30 32 26 32 L 24 32 Q 20 32 20 28 Z" fill="#ff3b5c" opacity="0.95"/>
+    <path d="M 30 24 Q 30 20 34 20 L 36 20 Q 40 20 40 24 L 40 28 Q 40 32 36 32 L 34 32 Q 30 32 30 28 Z" fill="#ff3b5c" opacity="0.95"/>
+    <circle cx="25" cy="26" r="1.4" fill="#ffe5ea"/>
+    <circle cx="35" cy="26" r="1.4" fill="#ffe5ea"/>
+    <path d="M 30 34 L 28 39 Q 30 40 32 39 Z" fill="#ff3b5c" opacity="0.85"/>
+    <g fill="#ff3b5c" opacity="0.7">
+      <rect x="24" y="42" width="2.5" height="4" rx="0.4"/>
+      <rect x="27.5" y="42.5" width="2.5" height="3.5" rx="0.4"/>
+      <rect x="31" y="42.5" width="2.5" height="3.5" rx="0.4"/>
+      <rect x="34.5" y="42" width="2.5" height="4" rx="0.4"/>
+    </g>
+  </g>
+
+  <!-- Wordmark -->
+  <g transform="translate(80,0)">
+    <text x="0" y="40" font-family="'Geist Sans','Inter','Helvetica Neue',sans-serif" font-size="28" font-weight="800" letter-spacing="1.5" fill="url(#wf-red)">NIGHTMARE</text>
+    <text x="195" y="40" font-family="'Geist Sans','Inter','Helvetica Neue',sans-serif" font-size="28" font-weight="300" letter-spacing="2" fill="#e5e5e5">AI</text>
+  </g>
+</svg>
