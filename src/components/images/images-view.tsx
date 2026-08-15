@@ -125,9 +125,9 @@ export function ImagesView() {
   };
 
   return (
-    <div className="h-full flex">
+    <div className="h-full flex flex-col lg:flex-row">
       {/* Form panel */}
-      <div className="w-full lg:w-96 border-r border-border bg-card/30 flex flex-col">
+      <div className="w-full lg:w-96 lg:h-full lg:border-r border-border bg-card/30 flex flex-col shrink-0">
         <div className="p-5 border-b border-border">
           <h1 className="text-lg font-bold flex items-center gap-2">
             <ImageIcon className="w-5 h-5 text-primary" />
@@ -286,8 +286,8 @@ export function ImagesView() {
         </div>
       </div>
 
-      {/* Gallery panel */}
-      <div className="hidden lg:flex flex-1 flex-col min-w-0">
+      {/* Gallery panel (always visible — responsive grid) */}
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
         <div className="p-5 border-b border-border">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
             Gallery · {generatedImages.length} image
@@ -367,46 +367,6 @@ export function ImagesView() {
             </div>
           )}
         </div>
-      </div>
-
-      {/* Mobile gallery (below form) */}
-      <div className="lg:hidden flex-1 overflow-y-auto custom-scroll p-4">
-        {generatedImages.length === 0 ? (
-          <p className="text-xs text-muted-foreground text-center py-6">
-            Your generated images will appear here.
-          </p>
-        ) : (
-          <div className="grid grid-cols-2 gap-3">
-            {generatedImages.map((img) => (
-              <Card key={img.id} className="glass border-border/60 overflow-hidden">
-                <img src={img.dataUrl} alt={img.prompt} className="w-full" />
-                <CardContent className="p-2">
-                  <p className="text-[10px] text-muted-foreground line-clamp-1">
-                    {img.prompt}
-                  </p>
-                  <div className="flex gap-1 mt-1">
-                    <Button
-                      size="icon"
-                      variant="secondary"
-                      className="h-7 w-7"
-                      onClick={() => handleDownload(img)}
-                    >
-                      <Download className="w-3 h-3" />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="secondary"
-                      className="h-7 w-7 text-destructive"
-                      onClick={() => deleteGeneratedImage(img.id)}
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
       </div>
     </div>
   );
