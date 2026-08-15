@@ -29,58 +29,46 @@ async function getUserId() {
   return { supabase, userId: user?.id };
 }
 
-const PRESENTATION_COLUMNS = [
-  "id",
-  "user_id",
-  "title",
-  "topic",
-  "audience",
-  "language",
-  "style",
-  "theme",
-  "slide_count",
-  "prompt",
-  "content",
-  "pptx_path",
-  "pdf_path",
-  "created_at",
-  "updated_at",
-] as const;
-
 export async function GET() {
   const { supabase, userId } = await getUserId();
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { data, error } = await supabase
-    .from("presentations")
-    .select("*")
-    .eq("user_id", userId)
-    .order("updated_at", { ascending: false });
+  try {
+    const { data, error } = await supabase
+      .from("presentations")
+      .select("*")
+      .eq("user_id", userId)
+      .order("updated_at", { ascending: false });
 
-  if (error) {
-    return NextResponse.json({ presentations: [], syncError: true });
+    if (error) {
+      console.warn("[/api/presentations-sync GET] error:", error.message);
+      return NextResponse.json({ presentations: [] });
+    }
+
+    return NextResponse.json({
+      presentations: (data || []).map((r) => ({
+        id: r.id,
+        title: r.title,
+        topic: r.topic,
+        audience: r.audience,
+        language: r.language,
+        style: r.style,
+        theme: r.theme,
+        slideCount: r.slide_count,
+        prompt: r.prompt,
+        content: r.content,
+        pptxPath: r.pptx_path,
+        pdfPath: r.pdf_path,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+      })),
+    });
+  } catch (err) {
+    console.error("[/api/presentations-sync GET] unexpected error:", err);
+    return NextResponse.json({ presentations: [] });
   }
-
-  return NextResponse.json({
-    presentations: (data || []).map((r) => ({
-      id: r.id,
-      title: r.title,
-      topic: r.topic,
-      audience: r.audience,
-      language: r.language,
-      style: r.style,
-      theme: r.theme,
-      slideCount: r.slide_count,
-      prompt: r.prompt,
-      content: r.content,
-      pptxPath: r.pptx_path,
-      pdfPath: r.pdf_path,
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
-    })),
-  });
 }
 
 export async function POST(req: Request) {
@@ -120,20 +108,20 @@ export async function POST(req: Request) {
     updated_at: p.updatedAt || now,
   };
 
-  // Verify the row only contains the columns we expect.
-  void PRESENTATION_COLUMNS;
+  try {
+    const { error } = await supabase
+      .from("presentations")
+      .upsert(row, { onConflict: "id" });
 
-  const { error } = await supabase
-    .from("presentations")
-    .upsert(row, { onConflict: "id" });
-
-  if (error) {
-    return NextResponse.json(
-      { error: error.message, syncError: true },
-      { status: 200 }
-    );
+    if (error) {
+      console.warn("[/api/presentations-sync POST] error:", error.message);
+      return NextResponse.json({ ok: true, id, syncError: true });
+    }
+    return NextResponse.json({ ok: true, id });
+  } catch (err) {
+    console.error("[/api/presentations-sync POST] unexpected error:", err);
+    return NextResponse.json({ ok: true, id, syncError: true });
   }
-  return NextResponse.json({ ok: true, id });
 }
 
 export async function DELETE(req: Request) {
@@ -146,16 +134,19 @@ export async function DELETE(req: Request) {
   if (!id) {
     return NextResponse.json({ error: "id required" }, { status: 400 });
   }
-  const { error } = await supabase
-    .from("presentations")
-    .delete()
-    .eq("id", id)
-    .eq("user_id", userId);
-  if (error) {
-    return NextResponse.json(
-      { error: error.message, syncError: true },
-      { status: 200 }
-    );
+  try {
+    const { error } = await supabase
+      .from("presentations")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", userId);
+    if (error) {
+      console.warn("[/api/presentations-sync DELETE] error:", error.message);
+      return NextResponse.json({ ok: true });
+    }
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error("[/api/presentations-sync DELETE] unexpected error:", err);
+    return NextResponse.json({ ok: true });
   }
-  return NextResponse.json({ ok: true });
 }

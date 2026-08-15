@@ -14,58 +14,52 @@ export async function GET() {
     return NextResponse.json({ user: null }, { status: 401 });
   }
 
-  // Try to fetch the profile row (may not exist in fresh Supabase projects).
-  const { data: profile, error } = await supabase
-    .from("profiles")
-    .select("id, email, display_name, avatar_url, provider, created_at")
-    .eq("id", user.id)
-    .maybeSingle();
+  // Build the fallback user object directly from auth metadata — used when
+  // the `profiles` table is missing or RLS denies access.
+  const fallbackUser = {
+    id: user.id,
+    email: user.email || "",
+    name:
+      (user.user_metadata?.full_name as string | undefined) ||
+      (user.user_metadata?.name as string | undefined) ||
+      (user.email || "").split("@")[0] ||
+      "User",
+    avatarUrl: user.user_metadata?.avatar_url as string | undefined,
+    provider: (user.app_metadata?.provider as string | undefined) || "email",
+    createdAt: user.created_at,
+  };
 
-  if (error) {
-    // Fall back to auth metadata if the profiles table is unavailable.
-    const meta = user.user_metadata || {};
-    const email = user.email || "";
+  try {
+    // Try to fetch the profile row (may not exist in fresh Supabase projects).
+    const { data: profile, error } = await supabase
+      .from("profiles")
+      .select("id, email, display_name, avatar_url, provider, created_at")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (error) {
+      console.warn("[/api/me GET] profiles query error:", error.message);
+      return NextResponse.json({ user: fallbackUser });
+    }
+
     return NextResponse.json({
-      user: {
-        id: user.id,
-        email,
-        name:
-          (meta.full_name as string | undefined) ||
-          (meta.name as string | undefined) ||
-          email.split("@")[0] ||
-          "User",
-        avatarUrl: meta.avatar_url as string | undefined,
-        provider: (user.app_metadata?.provider as string | undefined) || "email",
-        createdAt: user.created_at,
-      },
+      user: profile
+        ? {
+            id: profile.id,
+            email: profile.email || user.email || "",
+            name:
+              profile.display_name ||
+              (profile.email || user.email || "").split("@")[0],
+            avatarUrl: profile.avatar_url || undefined,
+            provider: profile.provider || "email",
+            createdAt: profile.created_at,
+          }
+        : fallbackUser,
     });
+  } catch (err) {
+    console.error("[/api/me GET] unexpected error:", err);
+    return NextResponse.json({ user: fallbackUser });
   }
-
-  return NextResponse.json({
-    user: profile
-      ? {
-          id: profile.id,
-          email: profile.email || user.email || "",
-          name:
-            profile.display_name ||
-            (profile.email || user.email || "").split("@")[0],
-          avatarUrl: profile.avatar_url || undefined,
-          provider: profile.provider || "email",
-          createdAt: profile.created_at,
-        }
-      : {
-          id: user.id,
-          email: user.email || "",
-          name:
-            (user.user_metadata?.full_name as string | undefined) ||
-            (user.email || "").split("@")[0] ||
-            "User",
-          avatarUrl: user.user_metadata?.avatar_url as string | undefined,
-          provider:
-            (user.app_metadata?.provider as string | undefined) || "email",
-          createdAt: user.created_at,
-        },
-  });
 }
 
 export async function PUT(req: Request) {
@@ -108,16 +102,20 @@ export async function PUT(req: Request) {
 
   // Best-effort upsert into profiles table (may fail silently if missing).
   if (body.name || body.avatarUrl) {
-    await supabase
-      .from("profiles")
-      .upsert({
-        id: user.id,
-        email: user.email,
-        display_name: body.name?.trim() || null,
-        avatar_url: body.avatarUrl?.trim() || null,
-        updated_at: new Date().toISOString(),
-      })
-      .then(() => undefined);
+    try {
+      await supabase
+        .from("profiles")
+        .upsert({
+          id: user.id,
+          email: user.email,
+          display_name: body.name?.trim() || null,
+          avatar_url: body.avatarUrl?.trim() || null,
+          updated_at: new Date().toISOString(),
+        })
+        .then(() => undefined);
+    } catch (err) {
+      console.warn("[/api/me PUT] profiles upsert error:", err);
+    }
   }
 
   const email = user.email || "";

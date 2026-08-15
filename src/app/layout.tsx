@@ -20,6 +20,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: `${BRAND.name} — AI Workspace`,
   description: BRAND.tagline,
+  manifest: "/manifest.webmanifest",
   keywords: [
     "NIGHTMARE AI",
     "AI workspace",
@@ -34,7 +35,7 @@ export const metadata: Metadata = {
       { url: "/favicon.svg", type: "image/svg+xml" },
       { url: "/logo.svg", type: "image/svg+xml", sizes: "64x64" },
     ],
-    apple: "/logo.svg",
+    apple: "/icon-192.png",
   },
 };
 

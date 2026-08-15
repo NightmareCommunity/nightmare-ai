@@ -12,9 +12,9 @@
   "vars": {
     "NEXT_PUBLIC_APP_NAME": "NIGHTMARE AI",
     "NEXT_PUBLIC_SUPABASE_URL": "https://ngshuozlyaooqccolwjk.supabase.co",
-    "NEXT_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_sHPombDX3m2mkoG74G42Rw__7rE7xP-",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5nc2h1b3pseWFvb3FjY29sd2prIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYyNjc2NjMsImV4cCI6MjEwMTg0MzY2M30.-S0a2VA6EwI8abiygFS9-Qo-Lvpo77xVwUxUXh_RN30",
     "SUPABASE_URL": "https://ngshuozlyaooqccolwjk.supabase.co",
-    "SUPABASE_ANON_KEY": "sb_publishable_sHPombDX3m2mkoG74G42Rw__7rE7xP-",
+    "SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5nc2h1b3pseWFvb3FjY29sd2prIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYyNjc2NjMsImV4cCI6MjEwMTg0MzY2M30.-S0a2VA6EwI8abiygFS9-Qo-Lvpo77xVwUxUXh_RN30",
     "NVIDIA_BASE_URL": "https://integrate.api.nvidia.com/v1",
     "NVIDIA_MODEL": "meta/llama-3.1-8b-instruct",
     "NVIDIA_IMAGE_BASE_URL": "https://integrate.api.nvidia.com/v1",

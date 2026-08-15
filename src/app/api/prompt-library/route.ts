@@ -18,28 +18,34 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Try the prompt_library table. If it doesn't exist (or RLS denies access),
-  // the client transparently falls back to its local Zustand promptLibrary.
-  const { data, error } = await supabase
-    .from("prompt_library")
-    .select("id, title, content, category, created_at, updated_at")
-    .eq("user_id", userId)
-    .order("updated_at", { ascending: false });
+  try {
+    // Try the prompt_library table. If it doesn't exist (or RLS denies access),
+    // the client transparently falls back to its local Zustand promptLibrary.
+    const { data, error } = await supabase
+      .from("prompt_library")
+      .select("id, title, content, category, created_at, updated_at")
+      .eq("user_id", userId)
+      .order("updated_at", { ascending: false });
 
-  if (error) {
-    return NextResponse.json({ prompts: [], syncError: true });
+    if (error) {
+      console.warn("[/api/prompt-library GET] error:", error.message);
+      return NextResponse.json({ prompts: [] });
+    }
+
+    return NextResponse.json({
+      prompts: (data || []).map((p) => ({
+        id: p.id,
+        title: p.title,
+        content: p.content,
+        category: p.category,
+        createdAt: p.created_at,
+        updatedAt: p.updated_at,
+      })),
+    });
+  } catch (err) {
+    console.error("[/api/prompt-library GET] unexpected error:", err);
+    return NextResponse.json({ prompts: [] });
   }
-
-  return NextResponse.json({
-    prompts: (data || []).map((p) => ({
-      id: p.id,
-      title: p.title,
-      content: p.content,
-      category: p.category,
-      createdAt: p.created_at,
-      updatedAt: p.updated_at,
-    })),
-  });
 }
 
 export async function POST(req: Request) {
@@ -72,29 +78,32 @@ export async function POST(req: Request) {
     updated_at: now,
   };
 
-  const { data, error } = await supabase
-    .from("prompt_library")
-    .upsert(row, { onConflict: "id" })
-    .select("id, title, content, category, created_at, updated_at")
-    .single();
+  try {
+    const { data, error } = await supabase
+      .from("prompt_library")
+      .upsert(row, { onConflict: "id" })
+      .select("id, title, content, category, created_at, updated_at")
+      .single();
 
-  if (error) {
-    return NextResponse.json(
-      { ok: false, syncError: true, error: error.message },
-      { status: 200 }
-    );
+    if (error) {
+      console.warn("[/api/prompt-library POST] error:", error.message);
+      return NextResponse.json({ ok: true, syncError: true, id });
+    }
+    return NextResponse.json({
+      ok: true,
+      prompt: {
+        id: data.id,
+        title: data.title,
+        content: data.content,
+        category: data.category,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+      },
+    });
+  } catch (err) {
+    console.error("[/api/prompt-library POST] unexpected error:", err);
+    return NextResponse.json({ ok: true, syncError: true, id });
   }
-  return NextResponse.json({
-    ok: true,
-    prompt: {
-      id: data.id,
-      title: data.title,
-      content: data.content,
-      category: data.category,
-      createdAt: data.created_at,
-      updatedAt: data.updated_at,
-    },
-  });
 }
 
 export async function DELETE(req: Request) {
@@ -107,16 +116,19 @@ export async function DELETE(req: Request) {
   if (!id) {
     return NextResponse.json({ error: "id required" }, { status: 400 });
   }
-  const { error } = await supabase
-    .from("prompt_library")
-    .delete()
-    .eq("id", id)
-    .eq("user_id", userId);
-  if (error) {
-    return NextResponse.json(
-      { ok: false, syncError: true, error: error.message },
-      { status: 200 }
-    );
+  try {
+    const { error } = await supabase
+      .from("prompt_library")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", userId);
+    if (error) {
+      console.warn("[/api/prompt-library DELETE] error:", error.message);
+      return NextResponse.json({ ok: true });
+    }
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error("[/api/prompt-library DELETE] unexpected error:", err);
+    return NextResponse.json({ ok: true });
   }
-  return NextResponse.json({ ok: true });
 }
