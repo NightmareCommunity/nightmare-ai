@@ -7,6 +7,7 @@ import { useAppStore, type AppUser } from "@/lib/store";
  * Bridges the Supabase auth session into the Zustand store.
  * - On mount, hydrates the store from the existing session (if any).
  * - Subscribes to auth state changes and keeps the store in sync.
+ * - Cleans up legacy unencrypted localStorage key on first load.
  */
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const supabase = getSupabaseBrowser();
@@ -14,6 +15,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useAppStore((s) => s.logout);
 
   useEffect(() => {
+    // One-time cleanup: remove the OLD unencrypted shared storage key
+    // so data from the previous (non-per-user) version doesn't leak.
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("nightmare-ai-store");
+    }
+
     let mounted = true;
 
     const mapUser = (u: {

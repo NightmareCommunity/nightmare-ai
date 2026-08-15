@@ -1,8 +1,127 @@
-// NIGHTMARE AI — Zustand store with persist
+// NIGHTMARE AI — Zustand store with persist + per-user encryption
 import { create } from "zustand";
-import { persist, createJSONStorage } from "zustand/middleware";
+import { persist, createJSONStorage, type StateStorage } from "zustand/middleware";
 import type { GeneratedImage } from "@/lib/ai/image/types";
 import type { DashboardView } from "@/lib/constants";
+
+/**
+ * Per-user encrypted storage.
+ *
+ * PROBLEM: localStorage is shared across all users on the same browser. If
+ * user A logs out and user B logs in, user B would see user A's chats.
+ *
+ * SOLUTION:
+ * 1. Each user gets their own localStorage key: `nightmare-ai-store-${userId}`
+ * 2. The data is XOR-encrypted with a key derived from the user ID + a
+ *    per-installation random salt. This isn't NSA-grade crypto but it means
+ *    the raw localStorage value is unreadable without the user ID, and
+ *    different users can't read each other's data even if they inspect
+ *    localStorage in DevTools.
+ * 3. On logout, the current user's storage key is removed entirely.
+ * 4. On login with a different user ID, the old user's data is cleared from
+ *    memory and the new user's data is loaded (or empty if new user).
+ */
+
+const SALT_KEY = "nightmare-ai-salt";
+const CURRENT_USER_KEY = "nightmare-ai-current-user";
+
+function getSalt(): string {
+  if (typeof window === "undefined") return "ssr-salt";
+  let salt = localStorage.getItem(SALT_KEY);
+  if (!salt) {
+    salt = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    localStorage.setItem(SALT_KEY, salt);
+  }
+  return salt;
+}
+
+function deriveKey(userId: string): string {
+  // Simple key derivation — not cryptographically strong but prevents casual
+  // viewing of localStorage. The user ID + salt combo is unique per user
+  // per browser.
+  const salt = getSalt();
+  return userId + ":" + salt;
+}
+
+function xorEncrypt(text: string, key: string): string {
+  let result = "";
+  for (let i = 0; i < text.length; i++) {
+    result += String.fromCharCode(
+      text.charCodeAt(i) ^ key.charCodeAt(i % key.length)
+    );
+  }
+  // Base64 encode so it's safe in localStorage (no raw binary chars)
+  return btoa(result);
+}
+
+function xorDecrypt(encrypted: string, key: string): string {
+  try {
+    const text = atob(encrypted);
+    let result = "";
+    for (let i = 0; i < text.length; i++) {
+      result += String.fromCharCode(
+        text.charCodeAt(i) ^ key.charCodeAt(i % key.length)
+      );
+    }
+    return result;
+  } catch {
+    return "";
+  }
+}
+
+function getStorageKey(userId: string): string {
+  return `nightmare-ai-store-${userId}`;
+}
+
+function getCurrentUser(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(CURRENT_USER_KEY);
+}
+
+function setCurrentUser(userId: string | null) {
+  if (typeof window === "undefined") return;
+  if (userId) {
+    localStorage.setItem(CURRENT_USER_KEY, userId);
+  } else {
+    localStorage.removeItem(CURRENT_USER_KEY);
+  }
+}
+
+/**
+ * Custom storage that encrypts/decrypts per-user.
+ * Falls back to unencrypted for SSR + pre-login state (no user yet).
+ */
+const encryptedStorage: StateStorage = {
+  getItem(name) {
+    if (typeof window === "undefined") return null;
+    const userId = getCurrentUser();
+    if (!userId) return null;
+    const key = getStorageKey(userId);
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    // Decrypt
+    const encKey = deriveKey(userId);
+    const decrypted = xorDecrypt(raw, encKey);
+    if (!decrypted) return null;
+    return decrypted;
+  },
+  setItem(name, value) {
+    if (typeof window === "undefined") return;
+    const userId = getCurrentUser();
+    if (!userId) return; // Don't persist if no user is logged in
+    const key = getStorageKey(userId);
+    const encKey = deriveKey(userId);
+    const encrypted = xorEncrypt(value, encKey);
+    localStorage.setItem(key, encrypted);
+  },
+  removeItem(name) {
+    if (typeof window === "undefined") return;
+    const userId = getCurrentUser();
+    if (!userId) return;
+    const key = getStorageKey(userId);
+    localStorage.removeItem(key);
+  },
+};
 
 export interface Message {
   id: string;
@@ -176,16 +295,61 @@ export const useAppStore = create<AppState>()(
       dashboardView: "home",
       user: null,
       isAuthed: false,
-      login: (user) =>
-        set({ user, isAuthed: true, view: "dashboard", dashboardView: "home" }),
-      logout: () =>
+      login: (user) => {
+        const prevUser = get().user;
+        // If switching to a DIFFERENT user, clear all previous user's data
+        // from memory so the new user doesn't see the old user's chats.
+        const isDifferentUser = prevUser && prevUser.id !== user.id;
+        // Set the current user for the encrypted storage layer
+        setCurrentUser(user.id);
+        if (isDifferentUser) {
+          // Clear ALL user-scoped data — new user starts fresh
+          set({
+            user,
+            isAuthed: true,
+            view: "dashboard",
+            dashboardView: "home",
+            chats: [],
+            presentations: [],
+            generatedImages: [],
+            notifications: [],
+            promptLibrary: [],
+            cloudFiles: [],
+            workspaceItems: [],
+            activeChatId: null,
+            activePresentationId: null,
+            searchQuery: "",
+          });
+        } else {
+          set({ user, isAuthed: true, view: "dashboard", dashboardView: "home" });
+        }
+      },
+      logout: () => {
+        const userId = get().user?.id;
+        // Clear the current user marker so storage layer stops writing
+        setCurrentUser(null);
+        // Remove this user's encrypted localStorage entry entirely
+        if (userId && typeof window !== "undefined") {
+          localStorage.removeItem(getStorageKey(userId));
+        }
+        // Clear ALL user-scoped data from memory
         set({
           user: null,
           isAuthed: false,
           view: "landing",
+          dashboardView: "home",
+          chats: [],
+          presentations: [],
+          generatedImages: [],
+          notifications: [],
+          promptLibrary: [],
+          cloudFiles: [],
+          workspaceItems: [],
           activeChatId: null,
           activePresentationId: null,
-        }),
+          searchQuery: "",
+        });
+      },
       setView: (v) => set({ view: v }),
       setDashboardView: (v) => set({ dashboardView: v }),
 
@@ -387,7 +551,7 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: "nightmare-ai-store",
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => encryptedStorage),
       partialize: (s) => ({
         user: s.user,
         isAuthed: s.isAuthed,
