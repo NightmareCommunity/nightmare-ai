@@ -36,7 +36,18 @@ export function ChatList({ onNavigate }: ChatListProps) {
   const preview = (chatId: string): string => {
     const c = chats.find((x) => x.id === chatId);
     if (!c || c.messages.length === 0) return "No messages yet";
-    return c.messages[c.messages.length - 1].content.slice(0, 60);
+    const lastMsg = c.messages[c.messages.length - 1];
+    // Strip markdown for clean preview
+    const raw = lastMsg.content
+      .replace(/```[\s\S]*?```/g, "[code]") // code blocks
+      .replace(/`([^`]+)`/g, "$1") // inline code
+      .replace(/!\[([^\]]*)\]\([^)]*\)/g, "[image]") // images
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1") // links
+      .replace(/[*_#>~|-]/g, "") // markdown symbols
+      .replace(/\n+/g, " ") // newlines → space
+      .trim();
+    const prefix = lastMsg.role === "user" ? "" : "";
+    return prefix + raw.slice(0, 60);
   };
 
   return (

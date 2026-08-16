@@ -473,7 +473,11 @@ export const useAppStore = create<AppState>()(
                   updatedAt: new Date().toISOString(),
                   title:
                     c.title === "New Chat" && msg.role === "user"
-                      ? msg.content.slice(0, 40) + (msg.content.length > 40 ? "..." : "")
+                      ? msg.content
+                          .replace(/[*_#>~`|-]/g, "")
+                          .replace(/\n+/g, " ")
+                          .trim()
+                          .slice(0, 40) + (msg.content.length > 40 ? "..." : "")
                       : c.title,
                 }
               : c
