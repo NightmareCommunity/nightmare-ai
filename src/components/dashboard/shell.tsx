@@ -33,7 +33,7 @@ export function DashboardShell() {
       {/* Main column */}
       <div className="flex-1 flex flex-col min-w-0">
         <TopBar />
-        <main className="flex-1 overflow-hidden overflow-y-auto">
+        <main className="flex-1 overflow-hidden">
           {renderView(view)}
         </main>
       </div>
@@ -42,42 +42,53 @@ export function DashboardShell() {
 }
 
 function renderView(view: DashboardView) {
+  // Views that manage their own scrolling (full-height, internal scroll)
   switch (view) {
-    case "home":
-      return <HomeView />;
     case "chat":
       return <ChatView />;
-    case "chats":
-      return <ChatsView />;
-    case "favorites":
-      return <FavoritesView />;
     case "images":
       return <ImagesView />;
     case "presentations":
       return <PresentationsView />;
-    case "history":
-      return <HistoryView />;
-    case "notifications":
-      return <NotificationsView />;
-    case "settings":
-      return <SettingsView />;
-    case "profile":
-      return <ProfileView />;
-    case "ai-library":
-      return <AILibraryView />;
-    case "prompt-library":
-      return <PromptLibraryView />;
-    case "templates":
-      return <TemplatesView />;
-    case "documents":
-      return <DocumentsView />;
-    case "cloud-storage":
-      return <CloudStorageView />;
-    case "workspace":
-      return <WorkspaceView />;
-    case "shared-files":
-      return <DocumentsView />;
     default:
-      return <HomeView />;
+      break;
   }
+  // All other views are wrapped in a scrollable container
+  const content = (() => {
+    switch (view) {
+      case "home":
+        return <HomeView />;
+      case "chats":
+        return <ChatsView />;
+      case "favorites":
+        return <FavoritesView />;
+      case "history":
+        return <HistoryView />;
+      case "notifications":
+        return <NotificationsView />;
+      case "settings":
+        return <SettingsView />;
+      case "profile":
+        return <ProfileView />;
+      case "ai-library":
+        return <AILibraryView />;
+      case "prompt-library":
+        return <PromptLibraryView />;
+      case "templates":
+        return <TemplatesView />;
+      case "documents":
+        return <DocumentsView />;
+      case "cloud-storage":
+        return <CloudStorageView />;
+      case "workspace":
+        return <WorkspaceView />;
+      case "shared-files":
+        return <DocumentsView />;
+      default:
+        return <HomeView />;
+    }
+  })();
+  return (
+    <div className="h-full overflow-y-auto custom-scroll">{content}</div>
+  );
 }

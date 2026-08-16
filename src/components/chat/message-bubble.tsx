@@ -27,13 +27,11 @@ export function MessageBubble({ message }: MessageBubbleProps) {
     }
   };
 
+  // ChatGPT-style: full-width row, avatar on left, content fills remaining space.
+  // No right-aligned bubbles — keeps the conversation flow vertical and clean.
   return (
-    <div
-      className={cn(
-        "flex gap-3 group",
-        isUser ? "flex-row-reverse" : "flex-row"
-      )}
-    >
+    <div className="group flex gap-3 sm:gap-4 px-1 py-1">
+      {/* Avatar */}
       <div className="shrink-0">
         {isUser ? (
           <Avatar className="w-8 h-8 border border-border">
@@ -42,28 +40,22 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             </AvatarFallback>
           </Avatar>
         ) : (
-          <div className="w-8 h-8 rounded-full nightmare-gradient flex items-center justify-center crimson-glow-sm">
+          <div className="w-8 h-8 rounded-full nightmare-gradient flex items-center justify-center crimson-glow-sm overflow-hidden">
             <LogoMark size={20} />
           </div>
         )}
       </div>
 
-      <div
-        className={cn(
-          "flex flex-col max-w-[85%] min-w-0",
-          isUser ? "items-end" : "items-start"
-        )}
-      >
-        <div
-          className={cn(
-            "rounded-2xl px-4 py-2.5",
-            isUser
-              ? "bg-primary/15 border border-primary/25 text-foreground rounded-tr-sm"
-              : "bg-card border border-border rounded-tl-sm"
-          )}
-        >
+      {/* Content */}
+      <div className="flex-1 min-w-0 flex flex-col">
+        <div className="flex items-center gap-2 mb-0.5">
+          <span className="text-xs font-semibold text-foreground">
+            {isUser ? "You" : isAssistant ? "NIGHTMARE AI" : "System"}
+          </span>
+        </div>
+        <div className="text-sm leading-relaxed">
           {isUser ? (
-            <p className="text-sm whitespace-pre-wrap break-words">
+            <p className="whitespace-pre-wrap break-words text-foreground">
               {message.content}
             </p>
           ) : isAssistant ? (
@@ -74,28 +66,31 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             </p>
           )}
         </div>
-        <div className="flex items-center gap-2 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <span className="text-[10px] text-muted-foreground">
-            {new Date(message.createdAt).toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
-          </span>
-          <button
-            onClick={handleCopy}
-            className="text-[10px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
-          >
-            {copied ? (
-              <>
-                <Check className="w-3 h-3" /> Copied
-              </>
-            ) : (
-              <>
-                <Copy className="w-3 h-3" /> Copy
-              </>
-            )}
-          </button>
-        </div>
+        {/* Action row (hover) */}
+        {!isUser && message.content && (
+          <div className="flex items-center gap-3 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <span className="text-[10px] text-muted-foreground">
+              {new Date(message.createdAt).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </span>
+            <button
+              onClick={handleCopy}
+              className="text-[10px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+            >
+              {copied ? (
+                <>
+                  <Check className="w-3 h-3" /> Copied
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3 h-3" /> Copy
+                </>
+              )}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
