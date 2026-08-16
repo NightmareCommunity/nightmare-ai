@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2 } from "lucide-react";
+import { Loader2, Eye, EyeOff } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase/browser-singleton";
 
 function GoogleIcon({ className }: { className?: string }) {
@@ -26,14 +26,6 @@ function GoogleIcon({ className }: { className?: string }) {
   );
 }
 
-function GitHubIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden>
-      <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
-    </svg>
-  );
-}
-
 interface AuthModalProps {
   mode: "login" | "signup" | null;
   onClose: () => void;
@@ -41,21 +33,47 @@ interface AuthModalProps {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Friendly error messages for common Supabase auth errors
+function friendlyError(msg: string): string {
+  const lower = msg.toLowerCase();
+  if (lower.includes("invalid login credentials")) {
+    return "Invalid email or password. Please try again.";
+  }
+  if (lower.includes("user already registered") || lower.includes("already been registered")) {
+    return "An account with this email already exists. Try signing in instead.";
+  }
+  if (lower.includes("password should be at least")) {
+    return "Password must be at least 8 characters long.";
+  }
+  if (lower.includes("unable to validate email address")) {
+    return "Please enter a valid email address.";
+  }
+  if (lower.includes("email rate limit")) {
+    return "Too many attempts. Please wait a minute and try again.";
+  }
+  if (lower.includes("for security purposes, you can only request this after")) {
+    return "Too many attempts. Please wait a minute and try again.";
+  }
+  return msg;
+}
+
 export function AuthModal({ mode, onClose }: AuthModalProps) {
   const [tab, setTab] = useState<"login" | "signup">(
     mode === "signup" ? "signup" : "login"
   );
   const [loading, setLoading] = useState(false);
+  const [oauthLoading, setOauthLoading] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const open = mode !== null;
 
-  const handleOAuth = async (provider: "google" | "github") => {
+  const handleOAuth = async (provider: "google") => {
     setError(null);
-    setLoading(true);
+    setOauthLoading(true);
     try {
       const supabase = getSupabaseBrowser();
       const redirectTo =
@@ -67,13 +85,13 @@ export function AuthModal({ mode, onClose }: AuthModalProps) {
         options: { redirectTo },
       });
       if (oauthError) throw oauthError;
-      // Browser will redirect to provider — no close needed
+      // Browser will redirect to provider — keep loading state until redirect
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : `${provider} sign-in failed`;
+        err instanceof Error ? friendlyError(err.message) : `${provider} sign-in failed`;
       setError(message);
       toast.error(message);
-      setLoading(false);
+      setOauthLoading(false);
     }
   };
 
@@ -87,13 +105,16 @@ export function AuthModal({ mode, onClose }: AuthModalProps) {
       const normalizedEmail = email.trim().toLowerCase();
 
       if (tab === "signup") {
+        if (!name.trim()) {
+          throw new Error("Please enter your name");
+        }
         if (!EMAIL_RE.test(normalizedEmail)) {
           throw new Error("Please enter a valid email address");
         }
         if (password.length < 8) {
           throw new Error("Password must be at least 8 characters");
         }
-        const trimmedName = (name || normalizedEmail.split("@")[0]).trim();
+        const trimmedName = name.trim();
         const { data, error: signUpError } = await supabase.auth.signUp({
           email: normalizedEmail,
           password,
@@ -107,7 +128,7 @@ export function AuthModal({ mode, onClose }: AuthModalProps) {
         });
         if (signUpError) throw signUpError;
 
-        // If email confirmation is disabled, the session is returned immediately.
+        // Email confirmation is disabled — session is returned immediately
         if (data.session) {
           toast.success("Welcome to NIGHTMARE AI");
           onClose();
@@ -128,7 +149,7 @@ export function AuthModal({ mode, onClose }: AuthModalProps) {
       toast.success("Signed in");
       onClose();
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Authentication failed";
+      const message = err instanceof Error ? friendlyError(err.message) : "Authentication failed";
       setError(message);
       toast.error(message);
     } finally {
@@ -136,8 +157,10 @@ export function AuthModal({ mode, onClose }: AuthModalProps) {
     }
   };
 
+  const isLoading = loading || oauthLoading;
+
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+    <Dialog open={open} onOpenChange={(o) => !o && !isLoading && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="text-xl font-bold tracking-tight">
@@ -153,34 +176,31 @@ export function AuthModal({ mode, onClose }: AuthModalProps) {
         <Tabs
           value={tab}
           onValueChange={(v) => {
+            if (isLoading) return;
             setTab(v as "login" | "signup");
             setError(null);
           }}
           className="w-full"
         >
-          <div className="grid grid-cols-2 gap-2 mb-4">
+          {/* OAuth buttons */}
+          <div className="grid grid-cols-1 gap-2 mb-4">
             <Button
               type="button"
               variant="outline"
-              disabled={loading}
+              disabled={isLoading}
               onClick={() => handleOAuth("google")}
-              className="h-11"
+              className="h-11 w-full"
             >
-              <GoogleIcon className="h-4 w-4 mr-2" />
-              Google
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={loading}
-              onClick={() => handleOAuth("github")}
-              className="h-11"
-            >
-              <GitHubIcon className="h-4 w-4 mr-2" />
-              GitHub
+              {oauthLoading ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <GoogleIcon className="h-4 w-4 mr-2" />
+              )}
+              Continue with Google
             </Button>
           </div>
 
+          {/* Divider */}
           <div className="relative mb-4">
             <div className="absolute inset-0 flex items-center">
               <span className="w-full border-t border-border" />
@@ -191,11 +211,13 @@ export function AuthModal({ mode, onClose }: AuthModalProps) {
               </span>
             </div>
           </div>
+
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="login">Sign In</TabsTrigger>
-            <TabsTrigger value="signup">Sign Up</TabsTrigger>
+            <TabsTrigger value="login" disabled={isLoading}>Sign In</TabsTrigger>
+            <TabsTrigger value="signup" disabled={isLoading}>Sign Up</TabsTrigger>
           </TabsList>
 
+          {/* Login form */}
           <TabsContent value="login" className="mt-4">
             <form onSubmit={handleSubmit} className="space-y-3">
               <div className="space-y-1.5">
@@ -208,19 +230,33 @@ export function AuthModal({ mode, onClose }: AuthModalProps) {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
                   autoComplete="email"
+                  disabled={isLoading}
+                  autoFocus
                 />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="pwd-login">Password</Label>
-                <Input
-                  id="pwd-login"
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  autoComplete="current-password"
-                />
+                <div className="relative">
+                  <Input
+                    id="pwd-login"
+                    type={showPassword ? "text" : "password"}
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    autoComplete="current-password"
+                    disabled={isLoading}
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
               {error && (
                 <p className="text-xs text-destructive" role="alert">
@@ -229,7 +265,7 @@ export function AuthModal({ mode, onClose }: AuthModalProps) {
               )}
               <Button
                 type="submit"
-                disabled={loading}
+                disabled={isLoading}
                 className="w-full h-11 bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -238,6 +274,7 @@ export function AuthModal({ mode, onClose }: AuthModalProps) {
             </form>
           </TabsContent>
 
+          {/* Signup form */}
           <TabsContent value="signup" className="mt-4">
             <form onSubmit={handleSubmit} className="space-y-3">
               <div className="space-y-1.5">
@@ -250,6 +287,8 @@ export function AuthModal({ mode, onClose }: AuthModalProps) {
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Ada Lovelace"
                   autoComplete="name"
+                  disabled={isLoading}
+                  autoFocus
                 />
               </div>
               <div className="space-y-1.5">
@@ -262,20 +301,33 @@ export function AuthModal({ mode, onClose }: AuthModalProps) {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
                   autoComplete="email"
+                  disabled={isLoading}
                 />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="pwd-signup">Password (min 8 chars)</Label>
-                <Input
-                  id="pwd-signup"
-                  type="password"
-                  required
-                  minLength={8}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  autoComplete="new-password"
-                />
+                <div className="relative">
+                  <Input
+                    id="pwd-signup"
+                    type={showPassword ? "text" : "password"}
+                    required
+                    minLength={8}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    autoComplete="new-password"
+                    disabled={isLoading}
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
               {error && (
                 <p className="text-xs text-destructive" role="alert">
@@ -284,7 +336,7 @@ export function AuthModal({ mode, onClose }: AuthModalProps) {
               )}
               <Button
                 type="submit"
-                disabled={loading}
+                disabled={isLoading}
                 className="w-full h-11 bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -293,6 +345,10 @@ export function AuthModal({ mode, onClose }: AuthModalProps) {
             </form>
           </TabsContent>
         </Tabs>
+
+        <p className="text-[11px] text-muted-foreground text-center mt-2">
+          By continuing, you agree to NIGHTMARE AI&apos;s Terms of Service and Privacy Policy.
+        </p>
       </DialogContent>
     </Dialog>
   );
