@@ -3,8 +3,7 @@ import { listTemplates, isConfigured } from "@/lib/presenton";
 import { TEMPLATES } from "@/lib/constants";
 
 export const runtime = "nodejs";
-export const dynamic = "force-static";
-export const revalidate = 3600;
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   if (!isConfigured()) {

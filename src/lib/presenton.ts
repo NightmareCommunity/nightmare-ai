@@ -1,17 +1,25 @@
 // NIGHTMARE AI — Presenton API client (server-only)
 // Docs: https://docs.presenton.ai
 
-const BASE_URL =
-  process.env.PRESENTON_API_URL || "https://api.presenton.ai";
-const API_KEY = process.env.PRESENTON_API_KEY || "";
+// LAZY INIT: On Cloudflare Workers, process.env is populated at runtime
+// from Worker bindings, NOT at module load time. Reading it into a
+// module-level constant captures an empty value. We must read it inside
+// each function call so it picks up the secret at request time.
+function getBaseUrl(): string {
+  return process.env.PRESENTON_API_URL || "https://api.presenton.ai";
+}
+
+function getApiKey(): string {
+  return process.env.PRESENTON_API_KEY || "";
+}
 
 export function isConfigured(): boolean {
-  return !!API_KEY;
+  return !!getApiKey();
 }
 
 function authHeaders(): HeadersInit {
   return {
-    Authorization: `Bearer ${API_KEY}`,
+    Authorization: `Bearer ${getApiKey()}`,
     "Content-Type": "application/json",
   };
 }
@@ -63,7 +71,7 @@ export async function generatePresentationAsync(
     throw new Error("Presenton API key not configured");
   }
   const res = await fetchWithTimeout(
-    `${BASE_URL}/presentations/generate`,
+    `${getBaseUrl()}/api/v3/presentation/generate/async`,
     {
       method: "POST",
       headers: authHeaders(),
@@ -101,7 +109,7 @@ export async function getTaskStatus(taskId: string): Promise<TaskStatus> {
     throw new Error("Presenton API key not configured");
   }
   const res = await fetchWithTimeout(
-    `${BASE_URL}/tasks/${taskId}`,
+    `${getBaseUrl()}/api/v3/async-task/status/${taskId}`,
     {
       method: "GET",
       headers: authHeaders(),
@@ -125,7 +133,7 @@ export async function listTemplates(
     return { templates: [] };
   }
   const res = await fetchWithTimeout(
-    `${BASE_URL}/templates?page=${page}&page_size=${pageSize}`,
+    `${getBaseUrl()}/api/v3/standard-template/all?page=${page}&page_size=${pageSize}`,
     {
       method: "GET",
       headers: authHeaders(),
@@ -150,11 +158,11 @@ export async function exportPresentation(
     throw new Error("Presenton API key not configured");
   }
   const res = await fetchWithTimeout(
-    `${BASE_URL}/presentations/${id}/export`,
+    `${getBaseUrl()}/api/v3/presentation/export`,
     {
       method: "POST",
       headers: authHeaders(),
-      body: JSON.stringify({ export_as: format }),
+      body: JSON.stringify({ presentation_id: id, export_as: format }),
     },
     60_000
   );
