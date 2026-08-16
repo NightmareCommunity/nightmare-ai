@@ -196,11 +196,9 @@ export interface AppUser {
 
 export function uid(): string {
   // Generate a proper UUID v4 — required for Supabase UUID primary keys.
-  // Falls back to crypto.randomUUID if available, otherwise manual construction.
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
     return crypto.randomUUID();
   }
-  // Manual UUID v4 fallback
   const bytes = new Uint8Array(16);
   if (typeof crypto !== "undefined" && crypto.getRandomValues) {
     crypto.getRandomValues(bytes);
@@ -211,6 +209,32 @@ export function uid(): string {
   bytes[8] = (bytes[8] & 0x3f) | 0x80;
   const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0"));
   return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10, 16).join("")}`;
+}
+
+// Debounced chat persistence — prevents flooding the API during streaming.
+// The API route does delete-all-then-insert, so concurrent calls race.
+// This debounce coalesces rapid updates into a single API call.
+const _persistTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+function debouncedPersistChat(
+  chatId: string,
+  get: () => AppState
+) {
+  if (_persistTimers[chatId]) clearTimeout(_persistTimers[chatId]);
+  _persistTimers[chatId] = setTimeout(() => {
+    delete _persistTimers[chatId];
+    const { persistChatToServer } = get();
+    if (persistChatToServer) persistChatToServer(chatId);
+  }, 3000); // 3 second debounce — flushes 3s after the last token
+}
+
+// Flush all pending debounced persists immediately (e.g., on page unload)
+function flushPendingPersists(get: () => AppState) {
+  for (const [chatId, timer] of Object.entries(_persistTimers)) {
+    clearTimeout(timer);
+    delete _persistTimers[chatId];
+    const { persistChatToServer } = get();
+    if (persistChatToServer) persistChatToServer(chatId);
+  }
 }
 
 interface AppState {
@@ -340,9 +364,11 @@ export const useAppStore = create<AppState>()(
         } else {
           set({ user, isAuthed: true, view: "dashboard", dashboardView: "home" });
         }
-        // Load this user's data from Supabase (chats, presentations, etc.)
-        // This is the KEY fix — data comes FROM the database, not just localStorage
-        get().hydrateFromServer();
+        // Delay hydrate to give Supabase auth cookie time to propagate.
+        // onAuthStateChange fires before the cookie is fully set in some browsers.
+        setTimeout(() => {
+          get().hydrateFromServer();
+        }, 300);
       },
       logout: () => {
         // CRITICAL: logout only terminates the session. It does NOT delete data.
@@ -471,9 +497,11 @@ export const useAppStore = create<AppState>()(
               : c
           ),
         }));
-        // Debounce would be better, but for now persist after each update
-        // (streaming calls this many times — the API route handles rewrites)
-        get().persistChatToServer(chatId);
+        // NOTE: Do NOT persist on every updateMessage call — streaming
+        // calls this hundreds of times per second. The streaming hook
+        // calls persistChatToServer once after streaming completes.
+        // We use a debounced persist here as a safety net.
+        debouncedPersistChat(chatId, get);
       },
       deleteMessage: (chatId, msgId) =>
         set((s) => ({
@@ -602,29 +630,60 @@ export const useAppStore = create<AppState>()(
       hydrateFromServer: async () => {
         if (get()._syncing) return;
         set({ _syncing: true });
+
+        // Helper that tries to fetch chats with retry on 401
+        const fetchWithRetry = async (
+          url: string,
+          retries = 3,
+          delayMs = 500
+        ): Promise<Response | null> => {
+          for (let attempt = 0; attempt < retries; attempt++) {
+            try {
+              const res = await fetch(url, { credentials: "same-origin" });
+              if (res.ok) return res;
+              if (res.status === 401 && attempt < retries - 1) {
+                // Auth cookie might not be set yet — wait and retry
+                await new Promise((r) => setTimeout(r, delayMs * (attempt + 1)));
+                continue;
+              }
+              return res;
+            } catch {
+              if (attempt < retries - 1) {
+                await new Promise((r) => setTimeout(r, delayMs * (attempt + 1)));
+                continue;
+              }
+              return null;
+            }
+          }
+          return null;
+        };
+
         try {
-          // Load chats + presentations in parallel
           const [chatsRes, presRes] = await Promise.all([
-            fetch("/api/chats", { credentials: "same-origin" }),
-            fetch("/api/presentations-sync", { credentials: "same-origin" }),
+            fetchWithRetry("/api/chats"),
+            fetchWithRetry("/api/presentations-sync"),
           ]);
 
-          if (chatsRes.ok) {
+          if (chatsRes && chatsRes.ok) {
             const data = await chatsRes.json();
             if (data.chats && Array.isArray(data.chats)) {
-              set({ chats: data.chats });
+              // Only replace if we got actual data (or confirmed empty from server)
+              if (!data.syncError) {
+                set({ chats: data.chats });
+              }
             }
           }
 
-          if (presRes.ok) {
+          if (presRes && presRes.ok) {
             const data = await presRes.json();
             if (data.presentations && Array.isArray(data.presentations)) {
-              set({ presentations: data.presentations });
+              if (!data.syncError) {
+                set({ presentations: data.presentations });
+              }
             }
           }
         } catch (err) {
           console.error("[hydrateFromServer] failed:", err);
-          // Non-fatal — local cache will be used
         } finally {
           set({ _syncing: false });
         }
