@@ -1,5 +1,6 @@
-// NIGHTMARE AI — NVIDIA NIM chat provider (OpenAI-compatible)
-import OpenAI from "openai";
+// NIGHTMARE AI — NVIDIA NIM chat provider (raw fetch, no SDK)
+// Removed the OpenAI SDK to reduce Worker bundle size and avoid
+// "Worker exceeded resource limits" errors on Cloudflare.
 import type {
   ChatRequest,
   ChatResponse,
@@ -8,22 +9,16 @@ import type {
 import { AIError, classifyHttpError } from "@/lib/ai/errors";
 import { DEFAULT_MODEL_ID } from "@/lib/constants";
 
-// Lazy-init: the OpenAI SDK throws at construction time if apiKey is "".
-// During Cloudflare build phase, NVIDIA_API_KEY isn't set (it's a secret),
-// so we defer client creation until the first request.
-let _client: OpenAI | null = null;
-function getClient(): OpenAI {
-  if (_client) return _client;
-  _client = new OpenAI({
-    baseURL:
-      process.env.NVIDIA_BASE_URL || "https://integrate.api.nvidia.com/v1",
-    apiKey: process.env.NVIDIA_API_KEY || "missing",
-  });
-  return _client;
+function getBaseUrl(): string {
+  return process.env.NVIDIA_BASE_URL || "https://integrate.api.nvidia.com/v1";
+}
+
+function getApiKey(): string {
+  return process.env.NVIDIA_API_KEY || "";
 }
 
 export function isConfigured(): boolean {
-  return !!process.env.NVIDIA_API_KEY;
+  return !!getApiKey();
 }
 
 function normalizeModel(model?: string): string {
@@ -42,15 +37,6 @@ function wrapError(err: unknown): AIError {
   if (err instanceof Error && err.name === "AbortError") {
     return new AIError("cancelled", "Request was cancelled");
   }
-  const anyErr = err as { status?: number; message?: string };
-  const status = anyErr?.status;
-  if (typeof status === "number") {
-    return new AIError(
-      classifyHttpError(status),
-      anyErr.message || `NVIDIA NIM request failed (${status})`,
-      status
-    );
-  }
   return new AIError(
     "network",
     (err instanceof Error ? err.message : "Network error") ||
@@ -66,24 +52,57 @@ export async function complete(req: ChatRequest): Promise<ChatResponse> {
     );
   }
   const model = normalizeModel(req.model);
+  const baseURL = getBaseUrl();
+  const apiKey = getApiKey();
+
   try {
-    const res = await getClient().chat.completions.create({
-      model,
-      messages: req.messages,
-      stream: false,
-      temperature: creativityToTemperature(req.creativity),
-      max_tokens: req.maxTokens ?? 1024,
+    const res = await fetch(`${baseURL}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: req.messages,
+        stream: false,
+        temperature: creativityToTemperature(req.creativity),
+        max_tokens: req.maxTokens ?? 1024,
+      }),
+      signal: req.signal,
     });
-    const choice = res.choices?.[0];
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new AIError(
+        classifyHttpError(res.status),
+        `NVIDIA NIM request failed (${res.status}): ${text.slice(0, 300)}`,
+        res.status
+      );
+    }
+
+    const json = (await res.json()) as {
+      choices?: Array<{
+        message?: { content?: string };
+      }>;
+      model?: string;
+      usage?: {
+        prompt_tokens?: number;
+        completion_tokens?: number;
+        total_tokens?: number;
+      };
+    };
+
+    const choice = json.choices?.[0];
     const content = choice?.message?.content || "";
     return {
       content,
-      model: res.model || model,
-      usage: res.usage
+      model: json.model || model,
+      usage: json.usage
         ? {
-            prompt_tokens: res.usage.prompt_tokens,
-            completion_tokens: res.usage.completion_tokens,
-            total_tokens: res.usage.total_tokens,
+            prompt_tokens: json.usage.prompt_tokens,
+            completion_tokens: json.usage.completion_tokens,
+            total_tokens: json.usage.total_tokens,
           }
         : undefined,
     };
@@ -100,12 +119,9 @@ export async function* stream(req: ChatRequest): AsyncGenerator<StreamChunk> {
     );
   }
   const model = normalizeModel(req.model);
-  const baseURL =
-    process.env.NVIDIA_BASE_URL || "https://integrate.api.nvidia.com/v1";
-  const apiKey = process.env.NVIDIA_API_KEY || "";
+  const baseURL = getBaseUrl();
+  const apiKey = getApiKey();
 
-  // Use raw fetch + manual SSE parsing — more reliable on Cloudflare Workers
-  // than the OpenAI SDK's stream iterator (which can silently close).
   let resp: Response;
   try {
     resp = await fetch(`${baseURL}/chat/completions`, {

@@ -1,5 +1,5 @@
-// NIGHTMARE AI — NVIDIA NIM image provider (OpenAI-compatible images API)
-import OpenAI from "openai";
+// NIGHTMARE AI — NVIDIA NIM image provider (raw fetch, no SDK)
+// Removed the OpenAI SDK to reduce Worker bundle size.
 import { v4 as uuidv4 } from "uuid";
 import { aspectToSize, DEFAULT_IMAGE_MODEL_ID } from "@/lib/constants";
 import type {
@@ -10,21 +10,19 @@ import type {
 import { ImageError } from "@/lib/ai/image/types";
 import { classifyHttpError } from "@/lib/ai/errors";
 
-// Lazy-init: same reason as nvidia.ts — avoid SDK throwing during build
-let _client: OpenAI | null = null;
-function getClient(): OpenAI {
-  if (_client) return _client;
-  _client = new OpenAI({
-    baseURL:
-      process.env.NVIDIA_IMAGE_BASE_URL ||
-      "https://integrate.api.nvidia.com/v1",
-    apiKey: process.env.NVIDIA_API_KEY || "missing",
-  });
-  return _client;
+function getBaseUrl(): string {
+  return (
+    process.env.NVIDIA_IMAGE_BASE_URL ||
+    "https://integrate.api.nvidia.com/v1"
+  );
+}
+
+function getApiKey(): string {
+  return process.env.NVIDIA_API_KEY || "";
 }
 
 export function isConfigured(): boolean {
-  return !!process.env.NVIDIA_API_KEY;
+  return !!getApiKey();
 }
 
 function detectMime(b64: string): string {
@@ -41,24 +39,6 @@ function parseSize(ar: string | undefined): { width: number; height: number } {
   return { width: w || 1024, height: h || 1024 };
 }
 
-function wrapError(err: unknown): ImageError {
-  if (err instanceof ImageError) return err;
-  const anyErr = err as { status?: number; message?: string };
-  const status = anyErr?.status;
-  if (typeof status === "number") {
-    return new ImageError(
-      classifyHttpError(status),
-      anyErr.message || `NVIDIA image request failed (${status})`,
-      status
-    );
-  }
-  return new ImageError(
-    "network",
-    (err instanceof Error ? err.message : "Network error") ||
-      "Unknown network error"
-  );
-}
-
 export async function generate(req: ImageRequest): Promise<ImageResponse> {
   if (!isConfigured()) {
     throw new ImageError(
@@ -70,23 +50,40 @@ export async function generate(req: ImageRequest): Promise<ImageResponse> {
   const n = Math.max(1, Math.min(4, req.n || 1));
   const { width, height } = parseSize(req.aspectRatio);
 
+  const body: Record<string, unknown> = {
+    model,
+    prompt: req.prompt,
+    n,
+    size: aspectToSize(req.aspectRatio || "1:1"),
+    response_format: "b64_json",
+  };
+  if (typeof req.seed === "number") body.seed = req.seed;
+  if (req.negativePrompt) body.negative_prompt = req.negativePrompt;
+
   try {
-    const params: Record<string, unknown> = {
-      model,
-      prompt: req.prompt,
-      n,
-      size: aspectToSize(req.aspectRatio || "1:1"),
-      response_format: "b64_json",
+    const res = await fetch(`${getBaseUrl()}/images/generations`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${getApiKey()}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new ImageError(
+        classifyHttpError(res.status),
+        `NVIDIA image request failed (${res.status}): ${text.slice(0, 300)}`,
+        res.status
+      );
+    }
+
+    const json = (await res.json()) as {
+      data?: Array<{ b64_json?: string }>;
     };
-    if (typeof req.seed === "number") params.seed = req.seed;
-    if (req.negativePrompt) params.negative_prompt = req.negativePrompt;
 
-    const client = getClient();
-    const res = (await client.images.generate(
-      params as Parameters<typeof client.images.generate>[0]
-    )) as { data?: Array<{ b64_json?: string }> };
-
-    const images: GeneratedImage[] = (res.data || [])
+    const images: GeneratedImage[] = (json.data || [])
       .filter((d) => d.b64_json)
       .map((d) => {
         const b64 = d.b64_json as string;
@@ -116,6 +113,11 @@ export async function generate(req: ImageRequest): Promise<ImageResponse> {
       usage: { creditsConsumed: 0 },
     };
   } catch (err) {
-    throw wrapError(err);
+    if (err instanceof ImageError) throw err;
+    throw new ImageError(
+      "network",
+      (err instanceof Error ? err.message : "Network error") ||
+        "Unknown network error"
+    );
   }
 }
