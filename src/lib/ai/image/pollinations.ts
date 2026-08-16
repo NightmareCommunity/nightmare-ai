@@ -13,14 +13,16 @@ import type {
 } from "@/lib/ai/image/types";
 import { ImageError } from "@/lib/ai/image/types";
 
-const POLLINATIONS_MODELS = ["flux", "flux-realism", "turbo"];
+const POLLINATIONS_MODELS = ["flux-realism", "flux", "turbo"];
 
 function mapModelToPollinations(model: string): string {
   const lower = model.toLowerCase();
+  // Default to flux-realism for HD quality — it produces more detailed,
+  // photorealistic results than the base flux model.
   if (lower.includes("schnell") || lower.includes("turbo")) return "flux";
   if (lower.includes("dev") || lower.includes("stable-diffusion"))
     return "flux-realism";
-  return "flux";
+  return "flux-realism";
 }
 
 function parseSize(ar: string | undefined): { width: number; height: number } {
@@ -139,7 +141,7 @@ export async function generate(req: ImageRequest): Promise<ImageResponse> {
     const url =
       `https://image.pollinations.ai/prompt/${encoded}` +
       `?width=${width}&height=${height}&seed=${currentSeed}` +
-      `&model=${pollinationsModel}&nologo=true&private=true&referrer=nightmare-ai`;
+      `&model=${pollinationsModel}&nologo=true&private=true&referrer=nightmare-ai&enhance=true`;
     try {
       const res = await fetchWithRetry(url);
       const buf = Buffer.from(await res.arrayBuffer());

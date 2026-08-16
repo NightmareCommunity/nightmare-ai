@@ -78,7 +78,7 @@ export interface ImageModelDescriptor {
 export const NVIDIA_IMAGE_MODELS: ImageModelDescriptor[] = [
   {
     id: "black-forest-labs/flux-1-schnell",
-    displayName: "FLUX.1 Schnell",
+    displayName: "FLUX.1 Schnell HD",
     provider: "nvidia",
     badge: "Fast",
     maxN: 4,
@@ -87,7 +87,7 @@ export const NVIDIA_IMAGE_MODELS: ImageModelDescriptor[] = [
   },
   {
     id: "black-forest-labs/flux-1-dev",
-    displayName: "FLUX.1 Dev",
+    displayName: "FLUX.1 Dev HD",
     provider: "nvidia",
     badge: "Recommended",
     maxN: 4,
@@ -128,16 +128,17 @@ export const ASPECT_RATIOS = [
 ];
 
 export function aspectToSize(ar: string): string {
+  // HD resolutions — 1.5x the standard sizes for crisp, detailed images
   const m: Record<string, string> = {
-    "1:1": "1024x1024",
-    "16:9": "1344x768",
-    "9:16": "768x1344",
-    "4:3": "1152x896",
-    "3:4": "896x1152",
-    "3:2": "1216x832",
-    "2:3": "832x1216",
+    "1:1": "1536x1536",
+    "16:9": "2048x1152",
+    "9:16": "1152x2048",
+    "4:3": "1792x1344",
+    "3:4": "1344x1792",
+    "3:2": "1920x1280",
+    "2:3": "1280x1920",
   };
-  return m[ar] || "1024x1024";
+  return m[ar] || "1536x1536";
 }
 
 export interface SidebarItem {
