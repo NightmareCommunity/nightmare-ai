@@ -5,10 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { LogoMark } from "@/components/shared/logo-mark";
 import { BRAND } from "@/lib/constants";
+import Link from "next/link";
 
 interface HeroProps {
-  onGetStarted: () => void;
-  onSignIn: () => void;
+  onGetStarted?: () => void;
+  onSignIn?: () => void;
 }
 
 const FEATURES = [
@@ -94,22 +95,24 @@ export function Hero({ onGetStarted, onSignIn }: HeroProps) {
           transition={{ duration: 0.7, delay: 0.4 }}
           className="mt-10 flex flex-col sm:flex-row gap-3 w-full sm:w-auto"
         >
-          <Button
-            size="lg"
-            onClick={onGetStarted}
-            className="h-12 px-8 bg-primary text-primary-foreground hover:bg-primary/90 crimson-glow-sm text-base"
-          >
-            Get Started
-            <ArrowRight className="ml-2 h-4 w-4" />
-          </Button>
-          <Button
-            size="lg"
-            variant="outline"
-            onClick={onSignIn}
-            className="h-12 px-8 text-base border-border hover:bg-accent"
-          >
-            Sign In
-          </Button>
+          <Link href="/signup">
+            <Button
+              size="lg"
+              className="h-12 px-8 bg-primary text-primary-foreground hover:bg-primary/90 crimson-glow-sm text-base"
+            >
+              Get Started
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+          </Link>
+          <Link href="/login">
+            <Button
+              size="lg"
+              variant="outline"
+              className="h-12 px-8 text-base border-border hover:bg-accent"
+            >
+              Sign In
+            </Button>
+          </Link>
         </motion.div>
 
         <motion.div

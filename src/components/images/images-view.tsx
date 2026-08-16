@@ -63,7 +63,10 @@ interface ImageTurn {
 
 export function ImagesView() {
   const [prompt, setPrompt] = useState("");
-  const [model, setModel] = useState(NVIDIA_IMAGE_MODELS[0].id);
+  // Default to the top/recommended model (FLUX.1 Dev HD)
+  const [model, setModel] = useState(
+    NVIDIA_IMAGE_MODELS.find((m) => m.badge === "Recommended")?.id || NVIDIA_IMAGE_MODELS[0].id
+  );
   const [aspect, setAspect] = useState("1:1");
   const [n, setN] = useState(1);
   const [negativePrompt, setNegativePrompt] = useState("");
@@ -71,6 +74,7 @@ export function ImagesView() {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [turns, setTurns] = useState<ImageTurn[]>([]);
+  const [viewMode, setViewMode] = useState<"generate" | "gallery">("generate");
 
   const generatedImages = useAppStore((s) => s.generatedImages);
   const addGeneratedImages = useAppStore((s) => s.addGeneratedImages);
@@ -223,10 +227,39 @@ export function ImagesView() {
             <div className="min-w-0">
               <h1 className="text-base font-bold truncate">Image Studio</h1>
               <p className="text-[11px] text-muted-foreground truncate">
-                FLUX.1 via NVIDIA NIM · Pollinations fallback
+                HD · flux-realism · {generatedImages.length} images
               </p>
             </div>
           </div>
+          {/* View toggle: Generate vs Gallery */}
+          <div className="flex items-center gap-1 shrink-0 bg-muted rounded-md p-0.5">
+            <button
+              onClick={() => setViewMode("generate")}
+              className={cn(
+                "px-3 py-1 text-xs font-medium rounded transition-colors",
+                viewMode === "generate"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Generate
+            </button>
+            <button
+              onClick={() => setViewMode("gallery")}
+              className={cn(
+                "px-3 py-1 text-xs font-medium rounded transition-colors",
+                viewMode === "gallery"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Gallery ({generatedImages.length})
+            </button>
+          </div>
+        </div>
+        {/* Settings row — only show in generate mode */}
+        {viewMode === "generate" && (
+        <div className="flex items-center gap-1.5 shrink-0 mt-2">
           {/* Settings popover */}
           <div className="flex items-center gap-1.5 shrink-0">
             <Select value={aspect} onValueChange={setAspect}>
@@ -307,9 +340,83 @@ export function ImagesView() {
             </Popover>
           </div>
         </div>
+        )}
       </div>
 
-      {/* Conversation area */}
+      {/* Gallery mode — show all generated images in a grid */}
+      {viewMode === "gallery" && (
+        <div className="flex-1 overflow-y-auto custom-scroll p-4 sm:p-6">
+          <div className="max-w-5xl mx-auto">
+            {generatedImages.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-center min-h-[60vh]">
+                <ImageIcon className="w-12 h-12 text-muted-foreground mb-3" />
+                <p className="text-sm font-medium">No images yet</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Switch to Generate mode to create your first image.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-4"
+                  onClick={() => setViewMode("generate")}
+                >
+                  Go to Generate
+                </Button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {generatedImages.map((img) => (
+                  <div
+                    key={img.id}
+                    className="group relative rounded-lg overflow-hidden border border-border bg-card cursor-pointer"
+                    onClick={() => setViewMode("generate")}
+                  >
+                    <img
+                      src={img.dataUrl}
+                      alt={img.prompt}
+                      className="w-full aspect-square object-cover"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/0 to-black/0 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-end justify-end p-2 gap-1">
+                      <div className="flex gap-1">
+                        <Button
+                          size="icon"
+                          variant="secondary"
+                          className="h-8 w-8"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDownload(img);
+                          }}
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="secondary"
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteGeneratedImage(img.id);
+                          }}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="absolute top-1.5 left-1.5">
+                      <Badge variant="secondary" className="text-[9px] bg-black/60 text-white backdrop-blur">
+                        {img.width}×{img.height}
+                      </Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Conversation area — only in generate mode */}
+      {viewMode === "generate" && (
       <div
         ref={scrollRef}
         className="flex-1 overflow-y-auto custom-scroll"
@@ -476,8 +583,10 @@ export function ImagesView() {
           )}
         </div>
       </div>
+      )}
 
-      {/* Input bar (chat-style, bottom) */}
+      {/* Input bar (chat-style, bottom) — only in generate mode */}
+      {viewMode === "generate" && (
       <div className="shrink-0 border-t border-border bg-background/80 backdrop-blur">
         <div className="max-w-3xl mx-auto p-3 sm:p-4">
           <div className="relative flex items-end gap-2">
@@ -508,6 +617,7 @@ export function ImagesView() {
           </p>
         </div>
       </div>
+      )}
     </div>
   );
 }

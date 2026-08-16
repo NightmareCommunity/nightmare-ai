@@ -1,34 +1,24 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-/**
- * Refreshes the Supabase auth session on every navigable request.
- * Cookie updates from Supabase are propagated back to the response so that
- * refreshed access tokens are persisted on the client.
- */
+const PROTECTED_ROUTES = ["/chat", "/images", "/presentations", "/settings", "/profile", "/history"];
+const AUTH_ROUTES = ["/login", "/signup"];
+
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Skip static assets + auth callback (it manages its own cookies).
+  // Skip static assets + API routes + auth callback
   if (
-    /^\/(_next\/static|_next\/image|favicon\.ico|auth\/callback|api\/models|api\/presentations\/templates|api\/auth)/.test(
-      pathname
-    )
+    /^\/(_next\/static|_next\/image|favicon\.ico|auth\/callback|api\/)/.test(pathname)
   ) {
     return NextResponse.next();
   }
-
-  const hasSbCookie = req.cookies.getAll().some((c) =>
-    c.name.startsWith("sb-")
-  );
-  if (!hasSbCookie) return NextResponse.next();
 
   const url =
     process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
   const anonKey =
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
     process.env.SUPABASE_ANON_KEY;
-  // If env vars aren't set (e.g. during build or misconfigured env), skip.
   if (!url || !anonKey) return NextResponse.next();
 
   let supabaseResponse = NextResponse.next({ request: req });
@@ -49,8 +39,22 @@ export async function middleware(req: NextRequest) {
     },
   });
 
-  // Refresh the session — this also rotates cookies on the response.
-  await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  const isProtected = PROTECTED_ROUTES.some((r) => pathname.startsWith(r));
+  const isAuthRoute = AUTH_ROUTES.some((r) => pathname.startsWith(r));
+
+  // Redirect authed users away from /login, /signup
+  if (user && isAuthRoute) {
+    return NextResponse.redirect(new URL("/chat", req.url));
+  }
+
+  // Redirect unauthed users away from protected routes
+  if (!user && isProtected) {
+    const redirectUrl = new URL("/login", req.url);
+    redirectUrl.searchParams.set("next", pathname);
+    return NextResponse.redirect(redirectUrl);
+  }
 
   return supabaseResponse;
 }
