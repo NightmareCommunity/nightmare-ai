@@ -15,7 +15,15 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { getSupabaseBrowser } from "@/lib/supabase/browser-singleton";
-import { ChevronLeft, ChevronRight, Settings, User, LogOut } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Settings,
+  User,
+  LogOut,
+  Plus,
+  MessageSquare,
+} from "lucide-react";
 import { toast } from "sonner";
 
 interface SidebarProps {
@@ -31,6 +39,9 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
   const user = useAppStore((s) => s.user);
   const logout = useAppStore((s) => s.logout);
+  const chats = useAppStore((s) => s.chats);
+  const activeChatId = useAppStore((s) => s.activeChatId);
+  const setActiveChat = useAppStore((s) => s.setActiveChat);
 
   const initials = (user?.name || user?.email || "U")
     .split(/[\s@]+/)
@@ -57,6 +68,17 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
     toast.success("Signed out");
   };
 
+  const handleOpenChat = (chatId: string) => {
+    setActiveChat(chatId);
+    setDashboardView("chat");
+    onNavigate?.();
+  };
+
+  // Show 5 most recent chats (sorted by updatedAt desc)
+  const recentChats = [...chats]
+    .sort((a, b) => (b.updatedAt > a.updatedAt ? 1 : -1))
+    .slice(0, 5);
+
   return (
     <aside
       className={cn(
@@ -66,7 +88,7 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
       )}
     >
       {/* Logo header */}
-      <div className="h-14 flex items-center justify-between px-3 border-b border-sidebar-border">
+      <div className="h-14 flex items-center justify-between px-3 border-b border-sidebar-border shrink-0">
         {collapsed ? (
           <div className="flex justify-center w-full">
             <LogoMark size={32} />
@@ -83,8 +105,32 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
         </button>
       </div>
 
+      {/* + New Chat button */}
+      {!collapsed && (
+        <div className="p-2 shrink-0">
+          <Button
+            onClick={() => handleNavigate("chat")}
+            className="w-full h-9 bg-primary text-primary-foreground hover:bg-primary/90 gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            New Chat
+          </Button>
+        </div>
+      )}
+      {collapsed && (
+        <div className="p-2 shrink-0">
+          <Button
+            onClick={() => handleNavigate("chat")}
+            size="icon"
+            className="w-full h-9 bg-primary text-primary-foreground hover:bg-primary/90"
+          >
+            <Plus className="w-4 h-4" />
+          </Button>
+        </div>
+      )}
+
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto custom-scroll px-2 py-3 space-y-5">
+      <nav className="flex-1 overflow-y-auto custom-scroll px-2 py-2 space-y-4">
         {SIDEBAR_GROUPS.map((group) => (
           <div key={group.label}>
             {!collapsed && (
@@ -122,10 +168,44 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
             </div>
           </div>
         ))}
+
+        {/* Recent Conversations — inside the same sidebar */}
+        {!collapsed && recentChats.length > 0 && (
+          <div>
+            <p className="text-[10px] uppercase tracking-wider font-mono text-muted-foreground/70 px-2 mb-1.5">
+              Recent
+            </p>
+            <div className="space-y-0.5">
+              {recentChats.map((chat) => {
+                const active = activeChatId === chat.id && dashboardView === "chat";
+                return (
+                  <button
+                    key={chat.id}
+                    onClick={() => handleOpenChat(chat.id)}
+                    className={cn(
+                      "w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs transition-colors text-left",
+                      active
+                        ? "bg-primary/15 text-primary"
+                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                    )}
+                  >
+                    <MessageSquare
+                      className={cn(
+                        "w-3.5 h-3.5 shrink-0",
+                        active ? "text-primary" : "text-muted-foreground"
+                      )}
+                    />
+                    <span className="truncate flex-1">{chat.title}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </nav>
 
       {/* User area */}
-      <div className="border-t border-sidebar-border p-2">
+      <div className="border-t border-sidebar-border p-2 shrink-0">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button

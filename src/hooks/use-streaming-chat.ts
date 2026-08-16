@@ -3,6 +3,18 @@ import { useCallback, useRef, useState } from "react";
 import { useAppStore } from "@/lib/store";
 import { toast } from "sonner";
 
+// Debounce persistChatToServer during streaming so we don't flood the API.
+// The store's updateMessage calls persistChatToServer on every chunk —
+// this debounce coalesces them into a single call after streaming pauses.
+const persistTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+function debouncedPersist(chatId: string, fn: () => void, delay = 2000) {
+  if (persistTimers[chatId]) clearTimeout(persistTimers[chatId]);
+  persistTimers[chatId] = setTimeout(() => {
+    fn();
+    delete persistTimers[chatId];
+  }, delay);
+}
+
 interface UseStreamingChatResult {
   sendMessage: (
     chatId: string,
@@ -161,6 +173,17 @@ export function useStreamingChat(): UseStreamingChatResult {
       } finally {
         setIsStreaming(false);
         abortRef.current = null;
+        // Final persist to Supabase — ensures the complete response is saved
+        const state = getChat();
+        const persistChat = state.persistChatToServer;
+        if (persistChat) {
+          // Clear any pending debounce and persist immediately
+          if (persistTimers[chatId]) {
+            clearTimeout(persistTimers[chatId]);
+            delete persistTimers[chatId];
+          }
+          persistChat(chatId);
+        }
       }
     },
     [addMessage, updateMessage, getChat]

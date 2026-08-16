@@ -195,9 +195,22 @@ export interface AppUser {
 }
 
 export function uid(): string {
-  return (
-    Math.random().toString(36).slice(2, 11) + Date.now().toString(36)
-  );
+  // Generate a proper UUID v4 — required for Supabase UUID primary keys.
+  // Falls back to crypto.randomUUID if available, otherwise manual construction.
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  // Manual UUID v4 fallback
+  const bytes = new Uint8Array(16);
+  if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+    crypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256);
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0"));
+  return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10, 16).join("")}`;
 }
 
 interface AppState {
@@ -278,6 +291,13 @@ interface AppState {
   // hydration flag
   _hydrated: boolean;
   setHydrated: () => void;
+
+  // Server sync (Supabase)
+  _syncing: boolean;
+  hydrateFromServer: () => Promise<void>;
+  persistChatToServer: (chatId: string) => Promise<void>;
+  persistPresentationToServer: (presentationId: string) => Promise<void>;
+  deleteChatFromServer: (chatId: string) => Promise<void>;
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -297,13 +317,10 @@ export const useAppStore = create<AppState>()(
       isAuthed: false,
       login: (user) => {
         const prevUser = get().user;
-        // If switching to a DIFFERENT user, clear all previous user's data
-        // from memory so the new user doesn't see the old user's chats.
         const isDifferentUser = prevUser && prevUser.id !== user.id;
-        // Set the current user for the encrypted storage layer
         setCurrentUser(user.id);
         if (isDifferentUser) {
-          // Clear ALL user-scoped data — new user starts fresh
+          // Switching users: clear local state, then hydrate from server
           set({
             user,
             isAuthed: true,
@@ -323,16 +340,17 @@ export const useAppStore = create<AppState>()(
         } else {
           set({ user, isAuthed: true, view: "dashboard", dashboardView: "home" });
         }
+        // Load this user's data from Supabase (chats, presentations, etc.)
+        // This is the KEY fix — data comes FROM the database, not just localStorage
+        get().hydrateFromServer();
       },
       logout: () => {
+        // CRITICAL: logout only terminates the session. It does NOT delete data.
+        // Supabase database records remain intact. The user will see all their
+        // data again when they log back in (loaded via hydrateFromServer).
         const userId = get().user?.id;
-        // Clear the current user marker so storage layer stops writing
         setCurrentUser(null);
-        // Remove this user's encrypted localStorage entry entirely
-        if (userId && typeof window !== "undefined") {
-          localStorage.removeItem(getStorageKey(userId));
-        }
-        // Clear ALL user-scoped data from memory
+        // Clear local in-memory state (data is safe in Supabase)
         set({
           user: null,
           isAuthed: false,
@@ -348,7 +366,11 @@ export const useAppStore = create<AppState>()(
           activeChatId: null,
           activePresentationId: null,
           searchQuery: "",
+          _syncing: false,
         });
+        // Note: we do NOT delete the localStorage entry. It serves as an
+        // offline cache. When the user logs back in, hydrateFromServer()
+        // will overwrite it with the latest data from Supabase.
       },
       setView: (v) => set({ view: v }),
       setDashboardView: (v) => set({ dashboardView: v }),
@@ -375,29 +397,37 @@ export const useAppStore = create<AppState>()(
         }));
         return id;
       },
-      deleteChat: (id) =>
+      deleteChat: (id) => {
         set((s) => ({
           chats: s.chats.filter((c) => c.id !== id),
           activeChatId: s.activeChatId === id ? null : s.activeChatId,
-        })),
-      renameChat: (id, title) =>
+        }));
+        get().deleteChatFromServer(id);
+      },
+      renameChat: (id, title) => {
         set((s) => ({
           chats: s.chats.map((c) =>
             c.id === id ? { ...c, title, updatedAt: new Date().toISOString() } : c
           ),
-        })),
-      togglePin: (id) =>
+        }));
+        get().persistChatToServer(id);
+      },
+      togglePin: (id) => {
         set((s) => ({
           chats: s.chats.map((c) =>
             c.id === id ? { ...c, pinned: !c.pinned } : c
           ),
-        })),
-      archiveChat: (id) =>
+        }));
+        get().persistChatToServer(id);
+      },
+      archiveChat: (id) => {
         set((s) => ({
           chats: s.chats.map((c) =>
             c.id === id ? { ...c, archived: !c.archived } : c
           ),
-        })),
+        }));
+        get().persistChatToServer(id);
+      },
       setActiveChat: (id) => set({ activeChatId: id }),
       addMessage: (chatId, msg) => {
         const id = uid();
@@ -423,9 +453,11 @@ export const useAppStore = create<AppState>()(
               : c
           ),
         }));
+        // Persist to Supabase immediately so data survives logout/login
+        get().persistChatToServer(chatId);
         return id;
       },
-      updateMessage: (chatId, msgId, content) =>
+      updateMessage: (chatId, msgId, content) => {
         set((s) => ({
           chats: s.chats.map((c) =>
             c.id === chatId
@@ -438,7 +470,11 @@ export const useAppStore = create<AppState>()(
                 }
               : c
           ),
-        })),
+        }));
+        // Debounce would be better, but for now persist after each update
+        // (streaming calls this many times — the API route handles rewrites)
+        get().persistChatToServer(chatId);
+      },
       deleteMessage: (chatId, msgId) =>
         set((s) => ({
           chats: s.chats.map((c) =>
@@ -459,14 +495,22 @@ export const useAppStore = create<AppState>()(
 
       presentations: [],
       activePresentationId: null,
-      addPresentation: (p) =>
-        set((s) => ({ presentations: [p, ...s.presentations] })),
-      deletePresentation: (id) =>
+      addPresentation: (p) => {
+        set((s) => ({ presentations: [p, ...s.presentations] }));
+        get().persistPresentationToServer(p.id);
+      },
+      deletePresentation: (id) => {
         set((s) => ({
           presentations: s.presentations.filter((p) => p.id !== id),
           activePresentationId:
             s.activePresentationId === id ? null : s.activePresentationId,
-        })),
+        }));
+        // Delete from server
+        fetch(`/api/presentations-sync?id=${encodeURIComponent(id)}`, {
+          method: "DELETE",
+          credentials: "same-origin",
+        }).catch(() => {});
+      },
       setActivePresentation: (id) => set({ activePresentationId: id }),
       updatePresentation: (id, patch) =>
         set((s) => ({
@@ -548,6 +592,101 @@ export const useAppStore = create<AppState>()(
 
       _hydrated: false,
       setHydrated: () => set({ _hydrated: true }),
+
+      // ===== SERVER SYNC (Supabase) =====
+      // These functions are the bridge between local Zustand state and the
+      // Supabase database. Data is ALWAYS saved to Supabase — localStorage
+      // is just an offline cache.
+      _syncing: false,
+
+      hydrateFromServer: async () => {
+        if (get()._syncing) return;
+        set({ _syncing: true });
+        try {
+          // Load chats + presentations in parallel
+          const [chatsRes, presRes] = await Promise.all([
+            fetch("/api/chats", { credentials: "same-origin" }),
+            fetch("/api/presentations-sync", { credentials: "same-origin" }),
+          ]);
+
+          if (chatsRes.ok) {
+            const data = await chatsRes.json();
+            if (data.chats && Array.isArray(data.chats)) {
+              set({ chats: data.chats });
+            }
+          }
+
+          if (presRes.ok) {
+            const data = await presRes.json();
+            if (data.presentations && Array.isArray(data.presentations)) {
+              set({ presentations: data.presentations });
+            }
+          }
+        } catch (err) {
+          console.error("[hydrateFromServer] failed:", err);
+          // Non-fatal — local cache will be used
+        } finally {
+          set({ _syncing: false });
+        }
+      },
+
+      persistChatToServer: async (chatId: string) => {
+        const chat = get().chats.find((c) => c.id === chatId);
+        if (!chat) return;
+        try {
+          await fetch("/api/chats", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify({
+              chat: {
+                id: chat.id,
+                title: chat.title,
+                pinned: chat.pinned,
+                archived: chat.archived,
+                model: chat.model,
+                messages: chat.messages.map((m) => ({
+                  id: m.id,
+                  role: m.role,
+                  content: m.content,
+                  tokens: m.tokens || 0,
+                  createdAt: m.createdAt,
+                })),
+                createdAt: chat.createdAt,
+                updatedAt: chat.updatedAt,
+              },
+            }),
+          });
+        } catch (err) {
+          console.error("[persistChatToServer] failed:", err);
+        }
+      },
+
+      persistPresentationToServer: async (presentationId: string) => {
+        const p = get().presentations.find((x) => x.id === presentationId);
+        if (!p) return;
+        try {
+          await fetch("/api/presentations-sync", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify({ presentation: p }),
+          });
+        } catch (err) {
+          console.error("[persistPresentationToServer] failed:", err);
+        }
+      },
+
+      deleteChatFromServer: async (chatId: string) => {
+        try {
+          await fetch(`/api/chats?id=${encodeURIComponent(chatId)}`, {
+            method: "DELETE",
+            credentials: "same-origin",
+          });
+        } catch (err) {
+          console.error("[deleteChatFromServer] failed:", err);
+        }
+      },
     }),
     {
       name: "nightmare-ai-store",
