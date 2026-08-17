@@ -75,16 +75,25 @@ export function ChatView() {
     }
   }, [activeChatId, chats, setActiveChat]);
 
-  const handleSend = (text: string) => {
-    if (!text.trim()) return;
+  const handleSend = (text: string, files?: import("@/components/chat/chat-input").AttachedFile[]) => {
+    if (!text.trim() && (!files || files.length === 0)) return;
+    // If files are attached, add them to the message content
+    let messageContent = text;
+    if (files && files.length > 0) {
+      const fileList = files.map((f) => {
+        if (f.preview) {
+          return `![${f.file.name}](${f.preview})`;
+        }
+        return `[${f.file.name}](${f.file.type || "file"}, ${f.file.size} bytes)`;
+      }).join("\n");
+      messageContent = `${text}\n\nAttached files:\n${fileList}`;
+    }
     if (!chat) {
       const id = newChat();
-      // Need to actually send — but state update is async, so we use the new id
-      // and a small delay. Use store getState to grab fresh chat.
-      setTimeout(() => sendMessage(id, text), 0);
+      setTimeout(() => sendMessage(id, messageContent), 0);
       return;
     }
-    sendMessage(chat.id, text);
+    sendMessage(chat.id, messageContent);
   };
 
   const handleRename = () => {
@@ -268,7 +277,7 @@ export function ChatView() {
                 </Button>
               </div>
             ) : (
-              <ChatInput onSend={handleSend} disabled={!chat} />
+              <ChatInput onSend={handleSend} disabled={!chat || isStreaming} />
             )}
             <p className="text-[10px] text-muted-foreground text-center mt-2">
               NIGHTMARE AI can make mistakes. Verify important information.
