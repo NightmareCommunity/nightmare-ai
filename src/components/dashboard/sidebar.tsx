@@ -67,10 +67,6 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
     }
     logout();
     toast.success("Signed out");
-    // Redirect to landing page after logout
-    if (typeof window !== "undefined") {
-      window.location.href = "/";
-    }
   };
 
   const handleOpenChat = (chatId: string) => {

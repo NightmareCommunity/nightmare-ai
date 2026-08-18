@@ -1,25 +1,15 @@
 "use client";
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { useAppStore } from "@/lib/store";
 import { Landing } from "@/components/landing";
 import { DashboardShell } from "@/components/dashboard/shell";
 import { Loader2 } from "lucide-react";
 
 export default function Home() {
-  const router = useRouter();
   const isAuthed = useAppStore((s) => s.isAuthed);
   const _hydrated = useAppStore((s) => s._hydrated);
 
-  useEffect(() => {
-    // If authed and on landing, redirect to /chat for a cleaner URL
-    if (_hydrated && isAuthed) {
-      // Use replace so back button doesn't get stuck
-      router.replace("/chat");
-    }
-  }, [_hydrated, isAuthed, router]);
-
-  // Show loading state while store hydrates
+  // Show loading state while store hydrates from localStorage
   if (!_hydrated) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -28,11 +18,11 @@ export default function Home() {
     );
   }
 
-  // Not authed → show landing page
+  // Not authed → show landing page with auth modal
   if (!isAuthed) {
     return <Landing />;
   }
 
-  // Authed but before redirect kicks in → show dashboard
+  // Authed → show dashboard
   return <DashboardShell />;
 }

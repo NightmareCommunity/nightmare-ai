@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
 
   if (errorParam) {
     return NextResponse.redirect(
-      new URL(`/login?error=${encodeURIComponent(errorParam)}`, req.url)
+      new URL(`/?error=${encodeURIComponent(errorParam)}`, req.url)
     );
   }
 
@@ -20,11 +20,9 @@ export async function GET(req: NextRequest) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) {
       return NextResponse.redirect(
-        new URL(`/login?error=${encodeURIComponent(error.message)}`, req.url)
+        new URL(`/?error=${encodeURIComponent(error.message)}`, req.url)
       );
     }
   }
-  // Default redirect to /chat (the main app) after successful auth
-  const redirectTo = next && next !== "/" ? next : "/chat";
-  return NextResponse.redirect(new URL(redirectTo, req.url));
+  return NextResponse.redirect(new URL(next || "/", req.url));
 }

@@ -1,10 +1,13 @@
 "use client";
-import { useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Hero } from "@/components/landing/hero";
 import { Sections } from "@/components/landing/sections";
+import { AuthModal } from "@/components/landing/auth-modal";
 import { toast } from "sonner";
 
 export function Landing() {
+  const [authMode, setAuthMode] = useState<"login" | "signup" | null>(null);
+
   // Check for OAuth error in URL params
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -18,8 +21,12 @@ export function Landing() {
 
   return (
     <main className="min-h-screen flex flex-col">
-      <Hero />
+      <Hero
+        onGetStarted={() => setAuthMode("signup")}
+        onSignIn={() => setAuthMode("login")}
+      />
       <Sections />
+      <AuthModal mode={authMode} onClose={() => setAuthMode(null)} />
     </main>
   );
 }
